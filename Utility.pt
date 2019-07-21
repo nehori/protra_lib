@@ -1,0 +1,243 @@
+//====================
+// 初期化
+//====================
+def Init()
+//------------------------------------------------
+        $set        = [$code_num]
+        $buy        = [$code_num]
+        $hold       = [$code_num]
+// ソート処理 ------------------------------------
+        $order      = [9999]
+        $buyflag    = [$code_num * 2]
+        $sellflag   = [$code_num]
+        $buyCnt     = 0
+        $sortCnt    = 0 // 昇順/降順ソーティング
+        $sortList1  = [$code_num]  // 昇順/降順変数値
+        $sortList2  = [$code_num]  // 証券コード
+        i = 0
+        while (i < $code_num)
+                $buyflag[i] = [2]
+                i = i + 1
+        end
+// 騰落レシオ計算用 ------------------------------
+        $up         = [$ratiodate] // 値上がり銘柄数
+        $down       = [$ratiodate] // 値下がり銘柄数
+        i = 0
+        while (i < $ratiodate)
+                $up[i]   = -1
+                $down[i] = -1
+                i = i + 1
+        end
+// その他 ----------------------------------------
+      　$totalfee   = 0          // 手数料合計
+end
+
+//====================
+// 売買手数料計算
+//====================
+def Fee(money)
+         // SBI証券(スタンダードプラン)の手数料計算
+         if (money <= 50000)
+                  t = 50
+         elsif (money <= 100000)
+                  t = 90
+         elsif (money <= 200000)
+                  t = 105
+         elsif (money <= 500000)
+                  t = 250
+         elsif (money <= 1000000)
+                  t = 429
+         elsif (money <= 1500000)
+                  t = 582
+         elsif (money <= 30000000)
+                  t = 921
+         else
+                  t = 973
+         end
+
+         $budget   = $budget - t
+         $totalfee = $totalfee + t
+         return
+end
+
+//==================================================
+// 売買代金
+//==================================================
+def SalesValue()
+         return (int)(Volume * Close)
+end
+
+//==================================================
+// Swap
+//==================================================
+def Swap(i, a1)
+         a2 = 0
+         while (a2 < $buyCnt - a1 - 1)
+                   $sortList1[$buyCnt - a2 - 1] = $sortList1[$buyCnt - a2 - 2] //値 並び替え
+                   $sortList2[$buyCnt - a2 - 1] = $sortList2[$buyCnt - a2 - 2] //証券コード並び替え
+                   a2 = a2 + 1
+         end
+         $sortList1[a1] = $buyflag[i][1] //値を置き換え
+         $sortList2[a1] = Code  //証券コードを記録
+         $sortCnt = $sortCnt + 1
+end
+
+//==================================================
+// 昇順/降順($reverse = 1)にソート
+//==================================================
+def Sort(i)
+         a1 = 0
+         // Main関数で買いルールを満たした銘柄
+         if ($buyflag[i][0])
+                  while (a1 < $buyCnt) // 一件ずつ
+                           if (a1 == $sortCnt)
+                                    $sortList1[a1] = $buyflag[i][1] // 昇順/降順ソーティングに使用する変数値
+                                    $sortList2[a1] = Code     //証券コードを記録
+                                    $sortCnt = $sortCnt + 1
+                                    break
+                           elsif ($reverse && $buyflag[i][1] > $sortList1[a1])
+                                    Swap(i, a1)
+                                    break
+                           elsif (! $reverse && $buyflag[i][1] < $sortList1[a1])
+                                    Swap(i, a1)
+                                    break
+                           end
+                           a1 = a1 + 1
+                  end
+
+                  // 使用した$buyflag 配列を初期化
+                  $buyflag[i][0] = 0
+                  $buyflag[i][1] = 0
+         end
+end
+
+//==================================================
+// 株数
+//==================================================
+def Num(buyUnit,price)
+         unit = Unit2(price)
+         return (buyUnit / (unit * price)) * unit
+end
+
+//==================================================
+// データの有無を確認
+//==================================================
+def PricedataExistCheck(data)
+         return !data         //存在する場合 0を返す
+end
+
+//==================================================
+// 買い（共通条件）
+//==================================================
+def Buying(i)
+         if (0 == PricedataExistCheck({1}Open))
+                  BuyingOpen(i,1)
+         else
+                  if (1 == PricedataExistCheck({2}Open))
+                           BuyingClose(i,0)
+                  else
+                           BuyingOpen(i,2)
+                  end
+         end
+end
+
+//==================================================
+// 売り（共通条件）
+//==================================================
+def Selling(i)
+         if (0 == PricedataExistCheck({1}Open))
+                  SellingOpen(i,1)
+         else
+                  if (1 == PricedataExistCheck({2}Open))
+                           SellingClose(i,0)
+                  else
+                           SellingOpen(i,2)
+                  end
+         end
+end
+
+//==================================================
+// 終値買い
+//==================================================
+def BuyingClose(i,d)
+
+         //資金が不足している場合は何もしない
+         if ($long == 0)
+                  return
+         end
+
+         //予算を超えない場合だけ買う
+         if ($long * {d}Close  <= $budget)
+                  //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
+                  if ($Interest == 1 || $Interest == 2)
+                           $budget = $budget - $long * {d}Close
+                  end
+                  $hold[i] = $long
+                  $buy[i] = {d}Close
+                  {d}Buy(Close, $hold[i])
+                  Fee($hold[i] * Close)
+                  //Print("B 予算残り =" + $budget)
+                  $set[i] = 0
+         else
+                  PrintLog("予算を超過しています")
+         end
+end
+
+//==================================================
+// 始値買い
+//==================================================
+def BuyingOpen(i,d)
+
+         //資金が不足している場合は何もしない
+         if ($long == 0)
+                  return
+         end
+
+         //予算を超えない場合だけ買う
+         if ($long * {d}Open <= $budget)
+                  //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
+                  if ($Interest == 1 || $Interest == 2)
+                           $budget = $budget - $long * {d}Open
+                  end
+                  $hold[i] = $long
+                  $buy[i] = {d}Open
+                  {d}Buy(Open, $hold[i])
+                  Fee($hold[i] * Open)
+                  //Print("B 予算残り =" + $budget)
+                  $set[i] = 0
+         else
+                  PrintLog("予算を超過しています")
+         end
+end
+
+//==================================================
+// 終値売り
+//==================================================
+def SellingClose(i,d)
+         //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
+         {d}Sell(Close, $hold[i])
+         Fee($hold[i] * Close)
+         if ($Interest == 2)
+                  $budget = $budget + {d}Close * $hold[i]
+         elsif ($Interest == 1)
+                  $budget = $budget + $buy[i] * $hold[i]
+         end
+         $hold[i] = 0
+         //Print("S 予算残り = " + $budget)
+end
+
+//==================================================
+// 始値売り
+//==================================================
+def SellingOpen(i,d)
+         //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
+         {d}Sell(Open, $hold[i])
+         Fee($hold[i] * Open)
+         if ($Interest == 2)
+                  $budget = $budget + {d}Open * $hold[i]
+         elsif ($Interest == 1)
+                  $budget = $budget + $buy[i] * $hold[i]
+         end
+         $hold[i] = 0
+         //Print("S 予算残り = " + $budget)
+end
