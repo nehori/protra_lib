@@ -30,7 +30,7 @@ def Init()
                 i = i + 1
         end
 // ‚»‚Ì‘¼ ----------------------------------------
-      @$totalfee   = 0          // è”—¿‡Œv
+//      @$totalfee   = 0          // è”—¿‡Œv
 end
 
 //====================
@@ -194,8 +194,8 @@ def BuyingClose(i,d)
                   $hold[i] = $long
                   $buy[i] = {d}Close
                   {d}Buy(Close, $hold[i])
-                  Fee($hold[i] * Close)
-                  //Print("B —\Zc‚è =" + $budget)
+//                  Fee($hold[i] * Close)
+                  Print("B —\Zc‚è =" + $budget)
                   $set[i] = 0
          else
                   PrintLog("—\Z‚ğ’´‰ß‚µ‚Ä‚¢‚Ü‚·")
@@ -221,10 +221,11 @@ def BuyingOpen(i,d)
                   $hold[i] = $long
                   $buy[i] = {d}Open
                   {d}Buy(Open, $hold[i])
-                  Fee($hold[i] * Open)
-                  //Print("B —\Zc‚è =" + $budget)
+//                  Fee($hold[i] * Open)
+                  Print("B —\Zc‚è =" + $budget)
                   $set[i] = 0
          else
+                  Print("w“üŠz=" + ($long * {d}Open) + "—\Zc‚è =" + $budget)
                   PrintLog("—\Z‚ğ’´‰ß‚µ‚Ä‚¢‚Ü‚·")
          end
 end
@@ -235,14 +236,14 @@ end
 def SellingClose(i,d)
          //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
          {d}Sell(Close, $hold[i])
-         Fee($hold[i] * Close)
+//         Fee($hold[i] * Close)
          if ($Interest == 2)
                   $budget = $budget + {d}Close * $hold[i]
          elsif ($Interest == 1)
                   $budget = $budget + $buy[i] * $hold[i]
          end
          $hold[i] = 0
-         //Print("S —\Zc‚è = " + $budget)
+         Print("S —\Zc‚è = " + $budget)
 end
 
 //==================================================
@@ -251,12 +252,12 @@ end
 def SellingOpen(i,d)
          //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
          {d}Sell(Open, $hold[i])
-         Fee($hold[i] * Open)
+//         Fee($hold[i] * Open)
          if ($Interest == 2)
                   $budget = $budget + {d}Open * $hold[i]
          elsif ($Interest == 1)
                   $budget = $budget + $buy[i] * $hold[i]
          end
          $hold[i] = 0
-         //Print("S —\Zc‚è = " + $budget)
+         Print("S —\Zc‚è = " + $budget)
 end
