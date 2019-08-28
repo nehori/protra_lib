@@ -193,7 +193,11 @@ def BuyingClose(i,d)
                   end
                   $hold[i] = $long
                   $buy[i] = {d}Close
-                  {d}Buy(Close, $hold[i])
+                  if ($shortSelling)
+                           {d}Sell(Close, $hold[i])
+                  else
+                           {d}Buy(Close, $hold[i])
+                  end
 //                  Fee($hold[i] * Close)
                   Print("B ó\éZécÇË =" + $budget)
                   $set[i] = 0
@@ -220,12 +224,16 @@ def BuyingOpen(i,d)
                   end
                   $hold[i] = $long
                   $buy[i] = {d}Open
-                  {d}Buy(Open, $hold[i])
+                  if ($shortSelling)
+                           {d}Sell(Open, $hold[i])
+                  else
+                           {d}Buy(Open, $hold[i])
+                  end
 //                  Fee($hold[i] * Open)
                   Print("B ó\éZécÇË =" + $budget)
                   $set[i] = 0
          else
-                  Print("çwì¸äz=" + ($long * {d}Open) + "ó\éZécÇË =" + $budget)
+//                  Print("çwì¸äz=" + ($long * {d}Open) + "ó\éZécÇË =" + $budget)
                   PrintLog("ó\éZÇí¥âﬂÇµÇƒÇ¢Ç‹Ç∑")
          end
 end
@@ -235,7 +243,11 @@ end
 //==================================================
 def SellingClose(i,d)
          //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
-         {d}Sell(Close, $hold[i])
+         if ($shortSelling)
+                  {d}Buy(Close, $hold[i])
+         else
+                  {d}Sell(Close, $hold[i])
+         end
 //         Fee($hold[i] * Close)
          if ($Interest == 2)
                   $budget = $budget + {d}Close * $hold[i]
@@ -251,7 +263,11 @@ end
 //==================================================
 def SellingOpen(i,d)
          //PrintLog(Year + " " + Month +" " + Day + " i = " + i )
-         {d}Sell(Open, $hold[i])
+         if ($shortSelling)
+                  {d}Buy(Open, $hold[i])
+         else
+                  {d}Sell(Open, $hold[i])
+         end
 //         Fee($hold[i] * Open)
          if ($Interest == 2)
                   $budget = $budget + {d}Open * $hold[i]
