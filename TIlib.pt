@@ -1,0 +1,2265 @@
+# TIlib.pt -- テクニカル指標を計算するオブジェクト指向風ライブラリ
+# Copyright (C) 2003-2007, 2010, 2013, 2014 panacoran <panacoran@users.sourceforge.jp>
+# 
+# This program is part of Protra.
+#
+# Protra is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see <http://www.gnu.org/licenses/>.
+# 
+# $Id$
+
+# 各指標は基本的に
+# http://www.incrediblecharts.com/technical/easy_guide.htm
+# を参考に実装してます。
+
+# すべてのクラスはコンストラクタとnextメソッドを持ちます。コンストラ
+# クタは クラス_new(引数) であり、呼ぶとその日のテクニカル指標を持つ
+# オブジェクトが返ります。N日前の指標がほしいときは@作用素を使い
+# {-N}クラス_new(引数) とします。
+
+# インスタンスは配列で実装されており、どのクラスも オブジェクト[0] 
+# が前日の値を オブジェクト[1] がその日の値を格納します。指標が複数
+# ある場合には偶数番が前日を奇数番が当日の値を保持します。
+
+# 過去の終値の数が足りずに計算できない場合は、後のnextメソッドで計算
+# する準備をしたオブジェクトが返ります。その場合には オブジェクト[0]
+# や オブジェクト[1] は null になります。
+
+# クラス_next(オブジェクト) として呼ばれたnextメソッドは、オブジェクト
+# の持っている過去のデータを利用して、次の日の指標を計算します。
+# {-N}クラス_new(引数) でN日前の指標を持つオブジェクトを生成した場合
+# には、nextメソッドはその次の日(N-1日前)の値を計算します。
+# この振る舞いを乱すので、nextメソッドに@作用素を用いてはいけません。
+
+#==== Utility classes and functions
+
+# MAutil
+# いろんな値の単純移動平均を計算する
+
+def MAutil_new(days)
+	obj = [6]
+	obj[0] = null // average
+	obj[1] = 0 // sum
+	obj[2] = days
+	obj[3] = 0 // index of the oldest item.
+	obj[4] = [days]
+	obj[5] = null // preserve dropped value
+	return obj
+end
+
+def MAutil_next(obj, val)
+	if val == null
+		return
+	end
+	oldest = obj[3] % obj[2]
+	if obj[4][oldest] != null
+		obj[5] = obj[4][oldest]
+		obj[1] = obj[1] - obj[5]
+	end
+	obj[1] = obj[1] + val
+	obj[4][oldest] = val
+	obj[3] = obj[3] + 1
+	if obj[3] >= obj[2]
+		obj[0] = (float)obj[1] / obj[2]
+	end
+end
+
+def MAutil_value(obj)
+	return obj[0]
+end
+
+def MAutil_dropped(obj)
+	return obj[5]
+end
+
+# EMAutil
+# いろんな値の指数移動平均を計算する
+
+def EMAutil_new(days)
+	obj = [3]
+	obj[0] = null // average
+	obj[1] = MAutil_new(days)
+	obj[2] = 2.0 / (days + 1)
+	return obj
+end
+
+def EMAutil_next(obj, val)
+	if val == null
+		return
+	end
+	if obj[0] == null
+		MAutil_next(obj[1], val)
+		obj[0] = obj[1][0]
+	else
+		obj[0] = obj[0] * (1 - obj[2]) +  val * obj[2]
+	end
+end
+
+# Wells Wilder Moving Average 
+
+# Wells Wilderの開発した指標(RSI, DMI)では、数値の平滑化に修正移動
+# 平均を用いるが、日本の多くのソフトウェアでは単純移動平均が用いら
+# れている。このクラスは、この方式の違いを隠蔽するために用いられる。
+
+def WilderMA_new(days, wilder)
+	obj = [3]
+	obj[0] = null
+	obj[1] = MAutil_new(days)
+	obj[2] = wilder // follows Wells Wilder's formula 
+	return obj
+end
+
+def WilderMA_next(obj, val)
+	if obj[0] == null || !obj[2]
+		MAutil_next(obj[1], val)
+		obj[0] = obj[1][0]
+	else
+		obj[0] = (((obj[1][2] - 1) * obj[0]) + val)/obj[1][2]
+	end
+end
+
+
+# 当日を含むn日間の高値と安値を記録する。
+
+def HighLow_new(days)
+	obj = [9]
+	obj[0] = null // max
+	obj[1] = null // min
+	obj[2] = days // days
+	obj[3] = 0 // index of max
+	obj[4] = 0 // index of min
+	obj[5] = 0 // traded days of max
+	obj[6] = 0 // traded days of min
+	obj[7] = 0
+	obj[8] = Index
+	goback = days
+	while 1
+		obj[3] = Index - goback
+		obj[4] = obj[3]
+		obj[7] = - goback
+		while (obj[7] < 0)
+			HighLow_next(obj)
+		end
+		if obj[0] != null || Index - goback < 0
+			break
+		end
+		goback = goback * 2
+		obj[5] = 0
+		obj[6] = 0
+	end
+	obj[7] = at
+	obj[8] = {-at}Index
+	return obj
+end
+
+def HighLow_next(obj)
+	obj[7] = obj[7] + 1 - Index + obj[8]
+	obj[8] = Index
+	if !{obj[7]}Volume
+		return
+	end
+	obj[5] = obj[5] + 1
+	obj[6] = obj[6] + 1
+	if !obj[0] && obj[5] < obj[2]
+		return
+	end
+	i = obj[7]
+	days = 0
+	if obj[5] == obj[2] || obj[6] == obj[2]
+		obj[0] = null
+		obj[1] = null
+		i = Min(obj[3], obj[4]) + 1 - Index
+		days = obj[2] - 1
+	end
+	while i <= obj[7]
+		if {i}Volume
+			high = {i}High
+			low = {i}Low
+			index = {i}Index
+			if !obj[0] || obj[0] < high
+				obj[0] = high
+				obj[3] = index
+				obj[5] = days
+			end
+			if !obj[1] || obj[1] > low
+				obj[1] = low
+				obj[4] = index
+				obj[6] = days
+			end
+			days = days - 1
+		end
+		i = i + 1
+	end
+end
+
+def HighLow_high(obj)
+	return obj[0]
+end
+
+def HighLow_low(obj)
+	return obj[1]
+end
+
+# Latest available prices
+def LatestPrices
+	i = 0
+	while {i}Index >= 0 && {i}Close == 0
+		i = i - 1
+	end
+	obj = [3]
+	obj[0] = {i}Close
+	obj[1] = {i}High
+	obj[2] = {i}Low
+	return obj
+end
+
+# Latest available closing prise
+def LatestClose
+	i = 0
+	while {i}Index >= 0 && {i}Close == 0
+		i = i - 1
+	end
+	return {i}Close
+end
+
+def Max(a, b)
+	if a == null		
+		return b
+	elsif b == null
+		return a
+	elsif a > b
+		return a
+	end
+	return b
+end
+
+def Min(a, b)
+	if a == Max(a, b)
+		return b
+	end
+	return a
+end
+
+def Abs(a)
+	if a < 0
+		return -a
+	end
+	return a
+end
+
+require "TOPIX100"
+
+# mode: 0=切り捨て 1=四捨五入 2=切り上げ
+def Yobine(price, mode)
+	if price > 30000000
+		tick = 100000
+	elsif price > 20000000
+		tick = 50000
+	elsif price > 1000000
+		tick = 10000
+	elsif price > 100000
+		tick = 1000
+	elsif price > 50000
+		tick = 100
+	elsif price > 30000
+		tick = 50
+	elsif price > 3000
+		tick = 10
+	elsif price > 2000
+		tick = 5
+	else
+		tick = 1
+	end
+	if Year * 10000 + Month * 100 + Day >= 20080722
+		if price > 1000000 && price <= 3000000
+			tick = 1000
+		elsif price > 100000 && price <= 300000 
+			tick = 100
+		end
+	end
+	if Year >= 2010
+		if price > 50000000
+			tick = 100000
+		elsif price > 30000000
+			tick = 50000
+		elsif price > 5000000
+			tick = 10000
+		elsif price > 3000000
+			tick = 5000
+		elsif price > 500000
+			tick = 1000
+		elsif price > 300000
+			tick = 500
+		elsif price > 50000
+			tick = 100
+		elsif price > 30000
+			tick = 50
+		elsif price > 5000
+			tick = 10
+		elsif price > 3000
+			tick = 5
+		else
+			tick = 1
+		end
+	end
+	if IsTOPIX100 && Year * 10000 + Month * 100 + Day >= 20140114
+		if price > 50000000
+			tick = 10000
+		elsif price > 30000000
+			tick = 5000
+		elsif price > 5000000
+			tick = 1000
+		elsif price > 1000000
+			tick = 500
+		elsif price > 500000
+			tick = 100
+		elsif price > 100000
+			tick = 50
+		elsif price > 10000
+			tick = 5
+		else
+			tick = 1
+		end
+	end
+	price = (float)price / tick
+	if mode == 0
+		price = (int)price
+	elsif mode == 1
+		price = (int)(price + 0.5)
+	elsif mode == 2
+		if (float)(int)price == price
+			price = (int)price
+		else
+			price = (int)price + 1
+		end
+	end
+	return price * tick
+end
+
+def Yobine(price)
+	return Yobine(price, 0)
+end
+
+# 単元株数
+def Unit2(price)
+	unit = Unit
+	if unit
+		return unit
+	end
+	# 不明な場合は推測値を返す。
+	num = 1000000 / price
+	if num >= 1000
+		return 1000
+	elsif num >= 100
+		return 100
+	end
+	return 1
+end
+
+#==== Trend Indicators ====
+
+# Simple Moving Average
+
+def MA_new(days)
+	obj = [6]
+	obj[0] = null // previous MA
+	obj[1] = null // current MA
+	obj[2] = MAutil_new(days)
+	obj[3] = {-days}LatestClose // fallback closing price
+	obj[4] = -days // *_next uses this value +1 as @.
+	obj[5] = Index // *_next adjusts @ with this recorded Index
+				   // to calculate the value of the next day.
+	while obj[4] < 0
+		MA_next(obj)
+	end
+	obj[4] = at
+	obj[5] = {-at}Index
+	return obj
+end
+
+def MA_next(obj)
+	obj[4] = obj[4] + 1 + obj[5] - Index
+	obj[5] = Index
+	obj[0] = obj[1]
+	if {obj[4]}Close
+		obj[3] = {obj[4]}Close
+	end
+	if !obj[3]
+		return
+	end
+	MAutil_next(obj[2], obj[3])
+	obj[1] = obj[2][0]
+end
+
+def MA_draw(obj, color)
+	if obj[0] != null && obj[1] != null
+		DrawLine(color, {-1}X, obj[0], X, obj[1])
+	end
+end
+
+def MA_drawEnvelope(obj, color, percent1, color1, percent2, color2)
+	if obj[0] == null || obj[1] == null
+		return
+	end
+	DrawLine(color, {-1}X, obj[0], X, obj[1])
+	p1 = percent1/100.0; p2 = percent2/100.0
+	if color1
+		DrawLine(color1, {-1}X, obj[0] * (1 - p1), X, obj[1] * (1 - p1))
+		DrawLine(color1, {-1}X, obj[0] * (1 + p1), X, obj[1] * (1 + p1))
+	end
+	if color2
+		DrawLine(color2, {-1}X, obj[0] * (1 - p2), X, obj[1] * (1 - p2))
+		DrawLine(color2, {-1}X, obj[0] * (1 + p2), X, obj[1] * (1 + p2))
+	end
+end
+
+def MA_envelope(obj, rate)
+	return obj[1] * rate
+end
+
+def MA_value(obj)
+	return obj[1]
+end
+
+# Percent difference from Simple Moving Average
+
+def DiffMA_new(days)
+	obj = [3]
+	obj[0] = null // previous % difference
+	obj[1] = null // current % difference
+	obj[2] = MA_new(days)
+	DiffMA_calc(obj)
+	return obj
+end
+
+def DiffMA_next(obj)
+	MA_next(obj[2])
+	DiffMA_calc(obj)
+end
+
+def DiffMA_calc(obj)
+	obj[0] = obj[1]
+	if obj[2][1]
+		obj[1] = 100.0 * (obj[2][3] - obj[2][1]) / obj[2][1]
+	end
+end
+
+def DiffMA_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def DiffMA_value(obj)
+	return obj[1]
+end
+
+# Exponential Moving Average
+
+def EMA_new(days)
+	obj = [6]
+	obj[0] = null // previous EMA
+	obj[1] = null // current EMA
+	obj[2] = EMAutil_new(days)
+	obj[3] = 0 // fallback closing price
+	// Try to use MA of (days * 3) days ago as the initial value.
+	obj[4] = -Min(days * 4, Index)
+	obj[5] = Index // recorded Index
+
+	obj[3] = {obj[4]}LatestClose
+	while obj[4] < 0
+		EMA_next(obj)
+	end
+	obj[4] = at 
+	obj[5] = {-at}Index
+	return obj
+end
+
+def EMA_next(obj)
+	obj[4] = obj[4] + 1 + obj[5] - Index 
+	obj[5] = Index
+	obj[0] = obj[1]
+	if {obj[4]}Close
+		obj[3] = {obj[4]}Close
+	end
+	if !obj[3]
+		return
+	end
+	EMAutil_next(obj[2], obj[3])
+	if obj[2][0]
+		obj[1] = obj[2][0]
+	end
+end
+
+def EMA_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def EMA_value(obj)
+	return obj[1]
+end
+
+# Percent difference from Exponential Moving Average
+
+def DiffEMA_new(days)
+	obj = [3]
+	obj[0] = null // previous % difference
+	obj[1] = null // current % difference
+	obj[2] = EMA_new(days)
+	DiffMA_calc(obj)
+	return obj
+end
+
+def DiffEMA_next(obj)
+	EMA_next(obj[2])
+	DiffMA_calc(obj)
+end
+
+def DiffEMA_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def DiffEMA_value(obj)
+	return obj[1]
+end
+
+# MACD
+
+def MACD_new(fast, slow, sig)
+	obj = [7]
+	obj[0] = null // previous MACD
+	obj[1] = null // current MACD
+	obj[2] = null // previous Signal
+	obj[3] = null // current Signal
+	obj[4] = {-sig*3}EMA_new(fast)
+	obj[5] = {-sig*3}EMA_new(slow)
+	obj[6] = EMAutil_new(sig)
+	MACD_calculate(obj)
+	i = -sig*3
+	while i < 0
+		MACD_next(obj)
+		i = i + 1
+	end
+	return obj
+end
+
+def MACD_next(obj)
+	EMA_next(obj[4])
+	EMA_next(obj[5])
+	MACD_calculate(obj)
+end
+
+def MACD_calculate(obj)
+	if obj[4][1] == null || obj[5][1] == null
+		return
+	end
+	macd = obj[4][1] - obj[5][1]
+	obj[0] = obj[1]
+	obj[1] = macd
+	EMAutil_next(obj[6], macd)
+	obj[2] = obj[3]
+	obj[3] = obj[6][0]
+end
+
+def MACD_draw(obj, macd, sig)
+	if obj[0] != null && obj[1] != null
+		DrawLine(macd, {-1}X, obj[0], X, obj[1])
+	end
+	if obj[2] != null && obj[3] != null
+		DrawLine(sig, {-1}X, obj[2], X, obj[3])
+	end
+end
+
+def MACD_drawHistogram(obj, color)
+	if obj[1] != null && obj[3] != null
+		xpos = X - Dx / 2
+		DrawLine(color, xpos, 0, xpos, (obj[1] - obj[3]))
+	end
+end
+
+def MACD_value(obj)
+	return obj[1]
+end
+
+def MACD_signal(obj)
+	return obj[3]
+end
+
+# DMI
+# Wilder の計算法に従う場合には DMI_new の3番目の引数に 1 を指定する。
+
+def DMI_new(di, adx, wilder) 
+	return DMI_new(di, adx, 0, wilder)
+end
+
+def DMI_new(di, adx, adxr, wilder) 
+	obj = [16]
+	obj[0] = null // previous +DI
+	obj[1] = null // current +DI
+	obj[2] = null // previous -DI
+	obj[3] = null // current -DI
+	obj[4] = null // previous ADX
+	obj[5] = null // current ADX
+	obj[6] = null // previous ADXR
+	obj[7] = null // current ADXR
+	obj[8] = WilderMA_new(di, wilder) // MA of +DM
+	obj[9] = WilderMA_new(di, wilder) // MA of -DM
+	obj[10] = WilderMA_new(di, wilder) // MA of True Range
+	obj[11] = WilderMA_new(adx, wilder) // ADX
+	obj[12] = MAutil_new(adxr) // ADXR
+	obj[13] = [3] // fallback prices
+	obj[14] = -di -adx -adxr - 3 * adx * wilder
+	obj[15] = Index
+	while obj[14] < 0
+		DMI_next(obj)
+	end
+	obj[14] = at
+	obj[15] = {-at}Index
+	return obj
+end
+
+def DMI_next(obj)
+	obj[14] = obj[14] + 1 + obj[15] - Index
+	obj[15] = Index
+	dm = {obj[14]}DMI_dm(obj)
+	if !dm
+		return
+	end
+	WilderMA_next(obj[8], dm[0])
+	WilderMA_next(obj[9], dm[1])
+	WilderMA_next(obj[10], dm[2])
+	if obj[8][0] == null
+		return
+	end
+	obj[0] = obj[1]
+	if obj[10][0] == 0
+		obj[10][0] = 0.00001
+	end
+	obj[1] = obj[8][0] / obj[10][0] * 100
+	obj[2] = obj[3]
+	obj[3] = obj[9][0] / obj[10][0] * 100
+	if obj[8][0] == 0 && obj[9][0] == 0
+		dx = 1
+	else
+		dx = Abs(obj[8][0] - obj[9][0]) / (obj[8][0] + obj[9][0])
+	end
+	WilderMA_next(obj[11], dx)
+	if obj[11][0] == null
+		return
+	end
+	obj[4] = obj[5]
+	obj[5] = obj[11][0] * 100
+	if obj[12][2] == 0 // ADXR is not required.
+		return
+	end
+	MAutil_next(obj[12], obj[5])
+	if MAutil_dropped(obj[12])
+		obj[6] = obj[7]
+		obj[7] = (obj[5] + MAutil_dropped(obj[12])) / 2.0
+	end
+end
+
+def DMI_dm(obj)
+	if !obj[13][0]
+		obj[13] = {-1}LatestPrices
+		if !obj[13][0]
+			return
+		end
+	end
+	if !Close
+	   return
+	end
+	dm = [3] // +DM, -DM, TR
+	dm[0] = High - obj[13][1]
+	obj[13][1] = High
+	dm[1] = obj[13][2] - Low
+	obj[13][2] = Low
+	dm[2] = Max(Max(High - Low, High - obj[13][0]), obj[13][0] - Low)
+	obj[13][0] = Close
+	if dm[0] < 0 && dm[1] < 0
+		dm[0] = 0; dm[1] = 0
+	elsif dm[0] > dm[1]
+		dm[1] = 0
+	elsif dm[0] < dm[1]
+		dm[0] = 0
+	else
+		dm[0] = 0; dm[1] = 0
+	end
+	return dm
+end
+
+def DMI_draw(obj, pdi, mdi, adx)
+	Stoch_draw(obj, pdi, mdi, adx)
+end
+
+def DMI_draw(obj, pdi, mdi, adx, adxr)
+	DMI_draw(obj, pdi, mdi, adx)
+	if adxr != null && obj[6] != null && obj[7] != null
+		DrawLine(adxr, {-1}X, obj[6], X, obj[7])
+	end
+end
+
+def DMI_pdi(obj)
+	return obj[1]
+end
+
+def DMI_mdi(obj)
+	return obj[3]
+end
+
+def DMI_adx(obj)
+	return obj[5]
+end
+
+def DMI_adxr(obj)
+	return obj[7]
+end
+
+# Parabolic SAR
+# このクラスは当日ではなく翌日の指標を返すので注意してほしい。
+
+def Parabolic_new(af, afmax)
+	obj = [11]
+	obj[0] = null // previous long
+	obj[1] = null // current long
+	obj[2] = null // previous short
+	obj[3] = null // current short
+	obj[4] = af
+	obj[5] = afmax
+	obj[6] = 0 // posision
+	obj[7] = 0 // acceleration factor
+	obj[8] = 0 // extreme point
+	obj[9] = -1
+	obj[10] = Index
+	Parabolic_next(obj)
+	obj[9] = at
+	obj[10] = {-at}Index
+	return obj
+end
+
+# start in a long trade with the lowest price in past 7 periods
+def Parabolic_init(obj)
+	i = 0
+	while i < 7
+		low = {-i}Low
+		if low && (!obj[0] || obj[0] > low)
+			obj[0] = low
+		end
+		i = i + 1
+	end
+	if obj[0]
+		obj[6] = 1
+		obj[7] = obj[4]
+		obj[8] = High
+		if !obj[8]; obj[8] = LatestClose; end
+	end
+end
+
+def Parabolic_next(obj)
+	obj[9] = obj[9] + 1 - Index + obj[10]
+	obj[10] = Index
+	obj[0] = obj[1]
+	obj[2] = obj[3]
+	if !obj[6]
+		{obj[9]}Parabolic_init(obj)
+	end
+	low0 = {obj[9]}Low
+	high0 = {obj[9]}High
+	if obj[6] >0
+		if low0 && low0 <= obj[0]
+			obj[1] = null; obj[2] = obj[8]
+			obj[6] = -1; obj[7] = obj[4]
+			obj[8] = low0
+		end
+	elsif obj[6] < 0
+		if high0 && obj[2] <= high0
+			obj[3] = null; obj[0] = obj[8]
+			obj[6] = 1; obj[7] = obj[4]
+			obj[8] = high0
+		end
+	end
+	if obj[6] > 0
+		if high0 && obj[8] < high0
+			obj[8] = high0
+			if obj[7] < obj[5]
+				obj[7] = obj[7] + obj[4]
+			end
+		end
+		long = obj[0] + (obj[8] - obj[0]) * obj[7]
+		low1 = {obj[9]-1}Low
+		if low0; long = Min(long, low0); end
+		if low1; long = Min(long, low1); end
+		obj[1] = long
+	elsif obj[6] < 0
+		if low0 && obj[8] > low0
+			obj[8] = low0
+			if obj[7] < obj[5]
+				obj[7] = obj[7] + obj[4]
+			end
+		end
+		short = obj[2] - (obj[2] - obj[8]) * obj[7]
+		high1 = {obj[9]-1}High
+		if high0; short = Max(short, high0); end
+		if high1; short = Max(short, high1); end
+		obj[3] = short
+	end
+end
+
+def Parabolic_draw(obj, color0, color1)
+	if obj[1]
+		DrawString(color0, "*", X, obj[1], 0)
+	end
+	if obj[3]
+		DrawString(color1, "*", X, obj[3], 0)
+	end
+end
+
+def Parabolic_long(obj)
+	return obj[1]
+end
+
+def Parabolic_short(obj)
+	return obj[3]
+end
+
+# HL Band
+
+def HLBand_new(days)
+	obj = [7]
+	obj[0] = null // previous high
+	obj[1] = null // current high
+	obj[2] = null // previous low
+	obj[3] = null // current low
+	obj[4] = null // previous mid
+	obj[5] = null // current mid
+	obj[6] = {-1}HighLow_new(days)
+	obj[1] = HighLow_high(obj[6])
+	obj[3] = HighLow_low(obj[6])
+	if obj[1] && obj[3]
+		obj[5] = (obj[1] + obj[3]) / 2
+	end
+	return obj
+end
+
+def HLBand_next(obj)
+	HighLow_next(obj[6])
+	obj[0] = obj[1]
+	obj[1] = HighLow_high(obj[6])
+	obj[2] = obj[3]
+	obj[3] = HighLow_low(obj[6])
+	obj[4] = obj[5]
+	if obj[1] && obj[3]
+		obj[5] = (obj[1] + obj[3]) / 2
+	end
+end
+
+def HLBand_draw(obj, high, low, mid)
+	if obj[0] != null && obj[1] != null
+		DrawLine(high, {-1}X, obj[0], X, obj[1])
+	end
+	if obj[2] != null && obj[3] != null
+		DrawLine(low, {-1}X, obj[2], X, obj[3])
+	end
+	if obj[4] != null && obj[5] != null
+		DrawLine(mid, {-1}X, obj[4], X, obj[5])
+	end
+end
+
+#==== Momentum Indicators ====
+
+# Stochastics
+
+def Stoch_new(k, d, sd)
+	obj = [11]
+	obj[0] = null // previous K
+	obj[1] = null // current K
+	obj[2] = null // previous D
+	obj[3] = null // current D
+	obj[4] = null // previous SD
+	obj[5] = null // current SD
+	obj[6] = k
+	obj[7] = MAutil_new(d) // D
+	obj[8] = MAutil_new(sd) // SD
+	obj[9] = -d -sd // @
+	obj[10] = Index // recorded Index
+	while obj[9] < 0
+		Stoch_next(obj)
+	end
+	obj[9] = at
+	obj[10] = {-at}Index
+	return obj
+end
+
+def Stoch_next(obj)
+	obj[9] = obj[9] + 1 + obj[10] - Index
+	obj[10] = Index
+	k = {obj[9]}Stoch_k(obj[6], 0)
+	if k == null
+		return
+	end
+	obj[0] = obj[1]
+	obj[1] = k
+	MAutil_next(obj[7], obj[1])
+	if obj[7][0] == null
+		return
+	end
+	obj[2] = obj[3]
+	obj[3] = obj[7][0]
+	MAutil_next(obj[8], obj[3])
+	if obj[8][0] == null
+		return
+	end
+	obj[4] = obj[5]
+	obj[5] = obj[8][0]
+end
+
+def Stoch_k(days, williamsR)
+	if Index < days - 1
+		return null
+	end
+	lc = 0 //latest close
+	ll = 0 //lowest low
+	hh = 0 //highest high
+	i = -days
+	while i < 0
+		i = i + 1
+		c = {i}Close
+		l = {i}Low
+		h = {i}High
+		if c != null
+			lc = c
+			if !ll || ll > l
+				ll = l
+			end
+			if !hh || hh < h
+				hh = h
+			end
+		end
+	end
+	if !williamsR
+		// If there is no fluctuation of prices over `days' days.
+		k = 100.0
+		if hh - ll
+			k = 100.0 * (lc - ll) / (hh - ll)
+		end
+	else
+		k = -100.0
+		if hh - ll
+			k = -100.0 * (hh - lc) / (hh -ll)
+		end
+	end
+	return k
+end
+
+def Stoch_draw(obj, k, d, sd)
+	if k != null && obj[0] != null && obj[1] != null
+		DrawLine(k, {-1}X, obj[0], X, obj[1])
+	end
+	if d != null && obj[2] != null && obj[3] != null 
+		DrawLine(d, {-1}X, obj[2], X, obj[3])
+	end
+	if sd != null && obj[4] != null && obj[5] != null
+		DrawLine(sd, {-1}X, obj[4], X, obj[5])
+	end
+end
+
+def Stoch_k(obj)
+	return obj[1]
+end
+
+def Stoch_d(obj)
+	return obj[3]
+end
+
+def Stoch_sd(obj)
+	return obj[5]
+end
+
+# Williams %R
+
+def WilliamsR_new(days)
+	obj = [5]
+	obj[0] = null // previous W%R
+	obj[1] = null // current W%R
+	obj[2] = days
+	obj[3] = -1 // @
+	obj[4] = Index // recorded Index
+	WilliamsR_next(obj)
+	obj[3] = at
+	obj[4] = {-at}Index
+	return obj
+end
+
+def WilliamsR_next(obj)
+	obj[3] = obj[3] + 1 + obj[4] - Index
+	obj[4] = Index
+	obj[0] = obj[1]
+	r = {obj[3]}Stoch_k(obj[2], 1)
+	if !r
+		return
+	end
+	obj[1] = r
+end
+
+def WilliamsR_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def WilliamsR_value(obj)
+	return obj[1]
+end
+
+# RSI
+# Wilder の計算法に従う場合には RSI_new の2番目の引数に 1 を指定する。
+
+def RSI_new(days, wilder)
+	obj = [8]
+	obj[0] = null // previous RSI
+	obj[1] = null // current RSI
+	obj[2] = WilderMA_new(days, wilder) // average of down closes 
+	obj[3] = WilderMA_new(days, wilder) // average of up closes 
+	obj[4] = days
+	obj[5] = 0 // fallback closing prise
+	obj[6] = -days -3 * days * wilder // @
+	obj[7] = Index // recorded Index
+	obj[5] = {obj[6]}LatestClose
+	while obj[6] < 0
+		RSI_next(obj)
+	end
+	obj[6] = at
+	obj[7] = {-at}Index
+	return obj
+end
+
+def RSI_next(obj)
+	obj[6] = obj[6] + 1 + obj[7] - Index 
+	obj[7] = Index
+	obj[0] = obj[1]
+	if !obj[5]
+		obj[5] = {obj[6] - 1}Close
+		if !obj[5]
+			return
+		end
+	end
+	close0 = obj[5]
+	close1 = {obj[6]}Close
+	if !close1
+		close1 = close0
+	else
+		obj[5] = close1
+	end
+	if close0 > close1
+		WilderMA_next(obj[2], close0 - close1)
+		WilderMA_next(obj[3], 0)
+	else
+		WilderMA_next(obj[2], 0)
+		WilderMA_next(obj[3], close1 - close0)
+	end
+	if obj[3][0] != null
+		if obj[3][0] == 0.0
+			obj[1] = 0.0
+		else
+			obj[1] = 100.0 /  (obj[2][0] / obj[3][0] + 1)
+		end
+	end
+end
+
+def RSI_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def RSI_value(obj)
+	return obj[1]
+end
+
+# RCI
+
+def RCI_new(days)
+	obj = [9]
+	obj[0] = null // previous RCI
+	obj[1] = null // current RCI
+	obj[2] = days
+	obj[3] = [days]
+	obj[4] = 0 // latest index
+	obj[5] = {-days}LatestClose // fallback closing price
+	obj[6] = -days // @
+	obj[7] = Index // recorded Index
+	obj[8] = 6.0 / days / (days * days - 1) // constant expression
+	while obj[6] < 0
+		RCI_next(obj)
+	end
+	obj[6] = at
+	obj[7] = {-at}Index
+	return obj
+end
+
+def RCI_next(obj)
+	obj[6] = obj[6] + 1 + obj[7] - Index
+	obj[7] = Index
+	obj[0] = obj[1]
+	if {obj[6]}Close
+		obj[5] = {obj[6]}Close
+	end
+	if !obj[5]
+		return
+	end
+	i = 0
+	old = obj[4] - obj[2]
+	while i < obj[2] && obj[3][i] && obj[3][i][0] != old
+		i = i + 1
+	end
+	tmp = [2]
+	tmp[0] = obj[4]
+	tmp[1] = obj[5]
+	obj[3][i] = tmp
+	// The following code performs the insert sort.
+	while i < obj[2] && obj[3][i]
+		tmp = obj[3][i]
+		j = i - 1
+		while j >= 0 && obj[3][j] && RCI_compare(obj[3][j], tmp) < 0
+			obj[3][j+1] = obj[3][j]
+			j = j - 1
+		end
+		obj[3][j + 1] = tmp
+		i = i + 1
+	end
+	obj[4] = obj[4] + 1
+	if obj[4] < obj[2]
+		return
+	end
+	i = 0
+	x = 0
+	while i < obj[2] 
+		d = (obj[4] - 1 - obj[3][i][0] - i)
+		d = d * d
+		x = x + d
+		i = i + 1
+	end
+	obj[1] = (1 - x * obj[8]) * 100
+end
+
+# 以下の関数は同じ終値を持つエントリが日付順に並ぶように値を返す。
+# 同じ終値が複数ある場合の処理によって、同じデータに対して異なるRCI
+# が得られることに注意してほしい。
+def RCI_compare(a, b)
+	if a[1] < b[1]
+		return -1		
+	elsif a[1] > b[1]
+		return 1
+	elsif a[0] < b[0]
+		return -1
+	else
+		return 1
+	end
+end
+
+def RCI_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def RCI_value(obj)
+	return obj[1]
+end
+
+# Momentum
+
+def Momentum_new(days)
+	obj = [5]
+	obj[0] = null // previous momentum
+	obj[1] = null // current momentum
+	obj[2] = days
+	obj[3] = -1
+	obj[4] = Index
+	Momentum_next(obj)
+	obj[3] = at
+	obj[4] = {-at}Index
+	return obj
+end
+
+def Momentum_next(obj)
+	obj[3] = obj[3] + 1 + obj[4] - Index
+	obj[4] = Index
+	obj[0] = obj[1]
+	close0 = {obj[3] - obj[2]}LatestClose
+	close1 = {obj[3]}LatestClose
+	if !close1 || !close0
+		return
+	end
+	obj[1] = close1 - close0
+end
+
+def Momentum_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def Momentum_value(obj)
+	return obj[1]
+end
+
+# ROC
+
+def ROC_new(days)
+	obj = [5]
+	obj[0] = null // previous ROC
+	obj[1] = null // current ROC
+	obj[2] = days
+	obj[3] = -1
+	obj[4] = Index
+	ROC_next(obj)
+	obj[3] = at
+	obj[4] = {-at}Index
+	return obj
+end
+
+def ROC_next(obj)
+	obj[3] = obj[3] + 1 + obj[4] - Index
+	obj[4] = Index
+	obj[0] = obj[1]
+	close0 = {obj[3] - obj[2]}LatestClose
+	close1 = {obj[3]}LatestClose
+	if !close1 || !close0
+		return
+	end
+	obj[1] = 100.0 * (close1 - close0)/close0
+end
+
+def ROC_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def ROC_value(obj)
+	return obj[1]
+end
+
+# Smoothed ROC
+
+def SROC_new(ema, days)
+	obj = [7]
+	obj[0] = null // previous SROC
+	obj[1] = null // current SROC
+	obj[2] = days
+	obj[3] = {-days}EMA_new(ema)
+	obj[4] = MAutil_new(days)
+	obj[5] = -days
+	obj[6] = Index
+	if obj[3][0] != null
+		MAutil_next(obj[4], obj[3][0])
+	end
+	while obj[5] < 0
+		SROC_next(obj)
+	end
+	obj[5] = at
+	obj[6] = {-at}Index
+	return obj
+end
+
+def SROC_next(obj)
+	obj[5] = obj[5] + 1 + obj[6] - Index
+	obj[6] = Index
+	obj[0] = obj[1]
+	
+	EMA_next(obj[3])
+	if obj[3][0] == null
+		return
+	end
+	MAutil_next(obj[4], obj[3][0])
+	dropped = MAutil_dropped(obj[4])
+	if dropped
+		obj[1] = 100.0 * (obj[3][0] - dropped) / dropped
+	end
+end
+
+def SROC_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def SROC_value(obj)
+	return obj[1]
+end
+
+# Psychological
+
+def Psycho_new(days)
+	obj = [6]
+	obj[0] = null // previous psychological
+	obj[1] = null // current psychological
+	obj[2] = MAutil_new(days)
+	obj[3] = {-days}LatestClose // fallback closing price
+	obj[4] = -days
+	obj[5] = Index
+	while obj[4] < 0
+		Psycho_next(obj)
+	end
+	obj[4] = at
+	obj[5] = {-at}Index
+	return obj
+end
+
+def Psycho_next(obj)
+	obj[4] = obj[4] + 1 + obj[5] - Index
+	obj[5] = Index
+	obj[0] = obj[1]
+	if !obj[3]
+		obj[3] = {obj[4]}Close
+		if !obj[3]
+			return
+		end
+	end
+	close0 = obj[3]
+	close1 = {obj[4]}Close
+	if !close1
+		close1 = close0
+	else
+		obj[3] = close1
+	end
+	if close1 > close0
+		MAutil_next(obj[2], 1)
+	else
+		MAutil_next(obj[2], 0)
+	end
+	if obj[2][0] != null
+		obj[1] = 100.0 * obj[2][0]
+	end
+	return
+end
+
+def Psycho_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def Psycho_value(obj)
+	return obj[1]
+end
+
+#==== Volume Indicators ====
+
+# Moving Average of Volumes
+
+def VolumeMA_new(days)
+	obj = [5]
+	obj[0] = null // previous MA of volumes
+	obj[1] = null // current MA of volumes
+	obj[2] = MAutil_new(days)
+	obj[3] = -days
+	obj[4] = Index
+	while obj[3] < 0
+		VolumeMA_next(obj)
+	end
+	obj[3] = at
+	obj[4] = {-at}Index
+	return obj
+end
+
+def VolumeMA_next(obj)
+	obj[3] = obj[3] + 1 + obj[4] - Index
+	obj[4] = Index
+	obj[0] = obj[1]
+	if {obj[3]}Index < 0
+		return
+	end
+	MAutil_next(obj[2], {obj[3]}Volume)
+	obj[1] = obj[2][0]
+end
+
+def VolumeMA_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def VolumeMA_value(obj)
+	return obj[1]
+end
+
+def VolumeEMA_new(days)
+	obj = [5]
+	obj[0] = null // previous EMA of volumes
+	obj[1] = null // current EMA of volumes
+	obj[2] = EMAutil_new(days)
+	obj[3] = -Min(days * 4, Index)
+	obj[4] = Index
+	while obj[3] < 0
+		VolumeEMA_next(obj)
+	end
+	obj[3] = at 
+	obj[4] = Index - at 
+	return obj
+end
+
+def VolumeEMA_next(obj)
+	obj[3] = obj[3] + 1 + obj[4] - Index 
+	obj[4] = Index
+	obj[0] = obj[1]
+	if {obj[3]}Index < 0
+		return
+	end
+	EMAutil_next(obj[2], {obj[3]}Volume)
+	if obj[2][0] != null
+		obj[1] = obj[2][0]
+	end
+end
+
+def VolumeEMA_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def VolumeEMA_value(obj)
+	return obj[1]
+end
+
+# On Balance Volume
+
+def OBV_new
+	obj = [5]
+	obj[0] = null // previous OBV
+	obj[1] = Volume // current OBV
+	obj[2] = LatestClose // fallback closing price
+	obj[3] = at
+	obj[4] = {-at}Index
+	return obj
+end
+
+def OBV_next(obj)
+	obj[3] = obj[3] + 1 + obj[4] - Index
+	obj[4] = Index
+	obj[0] = obj[1]
+	close0 = obj[2]
+	close1 = {obj[3]}Close
+	if !close1
+		close1 = close0
+	else
+		obj[2] = close1
+	end
+	if close0 && close1
+		if close1 > close0
+			obj[1] = obj[1] + {obj[3]}Volume
+		elsif close1 < close0
+			obj[1] = obj[1] - {obj[3]}Volume
+		end
+	end
+	return
+end
+
+def OBV_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def OBV_value(obj)
+	return obj[1]
+end
+
+# Accumulation/Distribution
+
+def ACDI_new
+	obj = [5]
+	obj[0] = null // previous A/D
+	obj[1] = 0 // current A/D
+	obj[2] = -1
+	obj[3] = Index
+	ACDI_next(obj)
+	obj[2] = at
+	obj[3] = {-at}Index
+	return obj
+end
+
+def ACDI_one
+	if Close
+		hl = (High - Low)
+		if hl
+			return (float)(Close - Open) / hl * Volume
+		end
+	end
+	return 0
+end
+
+def ACDI_next(obj)
+	obj[2] = obj[2] + 1 + obj[3] - Index
+	obj[3] = Index
+	obj[0] = obj[1]
+	obj[1] = obj[1] + {obj[2]}ACDI_one
+	return
+end
+
+def ACDI_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def ACDI_value(obj)
+	return obj[1]
+end
+
+# Chaikin Oscillator
+
+def CHO_new(fast, slow)
+	obj = [5]
+	obj[0] = null // previous CHO
+	obj[1] = 0 // current CHO
+	obj[2] = EMAutil_new(fast)
+	obj[3] = EMAutil_new(slow)
+	obj[4] = ACDI_new
+	obj[2][0] = ACDI_value(obj[4])
+	obj[3][0] = ACDI_value(obj[4])
+	return obj
+end
+
+def CHO_next(obj)
+	obj[0] = obj[1]
+	ACDI_next(obj[4])
+	EMAutil_next(obj[2], ACDI_value(obj[4]))
+	EMAutil_next(obj[3], ACDI_value(obj[4]))
+	if obj[3][0] != null
+		obj[1] = obj[2][0] - obj[3][0]
+	end	
+end
+
+def CHO_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def CHO_value(obj)
+	return obj[1]
+end
+
+# Volume Ratio
+# http://homepage2.nifty.com/portal/tech/vr.htm
+# VR[A]ならtypeに0をVR[B]なら1を和光VRなら2を指定する
+
+def VR_new(days, type) 
+	obj = [8]
+	obj[0] = null // previous VR
+	obj[1] = null // current VR
+	obj[2] = type // type
+	obj[3] = MAutil_new(days) // numerator
+	obj[4] = MAutil_new(days) // denominator
+	obj[5] = {-days}LatestClose // fallback closing price
+	obj[6] = -days
+	obj[7] = Index
+	while obj[6] < 0
+		VR_next(obj)
+	end
+	obj[6] = at
+	obj[7] = {-at}Index
+	return obj
+end
+
+def VR_next(obj) 
+	obj[6] = obj[6] + 1 + obj[7] - Index
+	obj[7] = Index
+	obj[0] = obj[1]
+	if !obj[5]
+		obj[5] = {obj[6]-1}Close
+		if !obj[5]
+			return
+		end
+	end
+	close0 = obj[5]
+	close1 = {obj[6]}Close
+	if !close1
+		close1 = close0
+	else
+		obj[5] = close1
+	end
+	vol = {obj[6]}Volume
+	if obj[2] == 0
+		VR_typeA_calc(obj[3], obj[4], close0, close1, vol)
+	elsif obj[2] == 1
+		VR_typeB_calc(obj[3], obj[4], close0, close1, vol)
+	else
+		VR_wako_calc(obj[3], obj[4], close0, close1, vol)
+	end
+	if obj[3][0] != null && obj[4][1] != 0.0
+		obj[1] = 100.0 * obj[3][1] / obj[4][1]
+	end
+	return
+end
+
+def VR_typeA_calc(n, d, close0, close1, vol)
+	if close1 > close0
+		v0 = vol; v1 = 0
+	elsif close1 < close0
+		v0 = 0; v1 = vol
+	else
+		v0 = vol / 2; v1 = vol / 2
+	end
+	MAutil_next(n, v0)
+	MAutil_next(d, v1)
+end
+
+def VR_typeB_calc(n, d, close0, close1, vol)
+	if close1 > close0
+		v = vol
+	elsif close1 < close0
+		v = 0
+	else
+		v = vol / 2
+	end
+	MAutil_next(n, v)
+	MAutil_next(d, vol)
+end
+
+def VR_wako_calc(n, d, close0, close1, vol)
+	if close1 > close0
+		v = vol;
+	else
+		v = -vol;
+	end
+	MAutil_next(n, v)
+	MAutil_next(d, vol)
+end
+
+def VR_draw(obj, color) 
+	MA_draw(obj, color)
+end
+
+def VR_value(obj)
+	return obj[1]
+end
+
+# Money Flow Index
+
+def MFI_latestTypical
+	p = LatestPrices
+	if p[0]
+		return (p[0] + p[1] + p[2]) / 3.0
+	end
+end
+
+def MFI_typicalPrice
+	if Close
+		return (Close + High + Low) / 3.0
+	end
+end
+
+def MFI_new(days) 
+	obj = [7]
+	obj[0] = null // previous MFI
+	obj[1] = null // current MFI
+	obj[2] = MAutil_new(days) // negative money flow
+	obj[3] = MAutil_new(days) // positive money flow
+	obj[4] = 0 // fallback typical price
+	obj[5] = -days
+	obj[6] = Index
+	while obj[5] < 0
+		MFI_next(obj)
+	end
+	obj[5] = at
+	obj[6] = {-at}Index
+	return obj
+end
+
+def MFI_next(obj)
+	obj[5] = obj[5] + 1 + obj[6] - Index 
+	obj[6] = Index
+	obj[0] = obj[1]
+	if !obj[4]
+		obj[4] = {obj[5] - 1}MFI_latestTypical
+		if !obj[4]
+			return
+		end
+	end
+	t0 = obj[4]
+	t1 = {obj[5]}MFI_typicalPrice
+	if !t1
+		t1 = t0
+	else
+		obj[4] = t1
+	end
+	mf = {obj[5]}Volume * t1
+	if t0 > t1
+		nmf = mf; pmf = 0
+	elsif t0 < t1
+		nmf = 0; pmf = mf
+	else
+		nmf = 0; pmf = 0
+	end
+	MAutil_next(obj[2], nmf)
+	MAutil_next(obj[3], pmf)
+	if obj[3][0] != null
+		if obj[3][0] == 0.0
+			obj[1] = 0.0
+		else
+			obj[1] = 100.0 /  (obj[2][0] / obj[3][0] + 1)
+		end
+	end
+end
+
+def MFI_draw(obj, color) 
+	MA_draw(obj, color)
+end
+
+def MFI_value(obj)
+	return obj[1]
+end
+
+# Force Index
+
+def ForceIndex_new(days)
+	obj = [6]
+	obj[0] = null // previous FI
+	obj[1] = null // current FI
+	obj[2] = 0 // fallback closing price
+	obj[3] = EMAutil_new(days) // initial MA
+	obj[4] = -Min(days * 3, Index)
+	obj[5] = Index
+
+	obj[2] = {obj[4]}LatestClose
+	while obj[4] < 0
+		ForceIndex_next(obj)
+	end
+	obj[4] = at
+	obj[5] = Index - at
+	return obj
+end
+
+def ForceIndex_next(obj)
+	obj[4] = obj[4] + 1 - Index + obj[5]
+	obj[5] = Index
+	obj[0] = obj[1]
+	if !obj[2]
+		obj[2] = {obj[4] - 1}Close
+		if !obj[2]
+			return
+		end
+	end
+	close0 = obj[2]
+	close1 = {obj[4]}Close
+	if !close1
+		close1 = close0
+	else
+		obj[2] = close1
+	end
+	EMAutil_next(obj[3], (close1 - close0) * {obj[4]}Volume)
+	if obj[3][0] != null
+		obj[1] = obj[3][0]
+	end
+end
+
+def ForceIndex_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def ForceIndex_value(obj)
+	return obj[1]
+end
+
+#==== Volatility Indicators
+
+# Bollinger Bands
+
+def BB_new(days)
+	obj = [5]
+	obj[0] = null // previous MA
+	obj[1] = null // current MA
+	obj[2] = null // previous standard deviation
+	obj[3] = null // current standard deviation
+	obj[4] = MA_new(days)
+	BB_calc(obj)
+	return obj
+end
+
+def BB_next(obj)
+	MA_next(obj[4])
+	BB_calc(obj)
+end
+
+def BB_calc(obj)
+	obj[0] = obj[1]
+	obj[2] = obj[3]
+	if !obj[4][1]
+		return
+	end
+	obj[1] = obj[4][1]
+	av = obj[4][1]
+	mu = obj[4][2]
+	x = 0
+	i = 0
+	while i < mu[2]
+		d = mu[4][i] - av
+		x = x + d * d
+		i = i + 1
+	end
+	obj[3] = Sqrt((float)x / mu[2])
+end
+
+def BB_draw(obj, color, color1, color2)
+	if obj[0] == null || obj[1] == null
+		return
+	end
+	DrawLine(color, {-1}X, obj[0], X, obj[1])
+	if color1
+		DrawLine(color1, {-1}X, obj[0] - obj[2], X, obj[1] - obj[3])
+		DrawLine(color1, {-1}X, obj[0] + obj[2], X, obj[1] + obj[3])
+	end
+	if color2
+		DrawLine(color2, {-1}X, obj[0] - 2 * obj[2], X, obj[1] - 2 * obj[3])
+		DrawLine(color2, {-1}X, obj[0] + 2 * obj[2], X, obj[1] + 2 * obj[3])
+	end
+end
+
+def BB_draw2(obj, color, color1, color2, color3)
+	if obj[0] == null || obj[1] == null
+		return
+	end
+	DrawLine(color, {-1}X, obj[0], X, obj[1])
+	if color1
+		DrawLine(color1, {-1}X, obj[0] - obj[2], X, obj[1] - obj[3])
+		DrawLine(color1, {-1}X, obj[0] + obj[2], X, obj[1] + obj[3])
+	end
+	if color2
+		DrawLine(color2, {-1}X, obj[0] - 2 * obj[2], X, obj[1] - 2 * obj[3])
+		DrawLine(color2, {-1}X, obj[0] + 2 * obj[2], X, obj[1] + 2 * obj[3])
+	end
+	if color3
+		DrawLine(color3, {-1}X, obj[0] - 3 * obj[2], X, obj[1] - 3 * obj[3])
+		DrawLine(color3, {-1}X, obj[0] + 3 * obj[2], X, obj[1] + 3 * obj[3])
+	end
+end
+
+def BB_value(obj)
+	return obj[1]
+end
+
+def BB_deviation(obj)
+	return obj[3]
+end
+
+# Average True Range
+
+def ATR_new(days)
+	obj = [6]	
+	obj[0] = null // previous ATR
+	obj[1] = null // current ATR
+	obj[2] = WilderMA_new(days, 1) // MA of TR
+	obj[3] = 0 // fallback closing price
+	obj[4] = -days * 3
+	obj[5] = Index
+	while obj[4] < 0
+		ATR_next(obj)
+	end
+	obj[4] = at
+	obj[5] = {-at}Index
+	return obj
+end
+
+def ATR_next(obj)
+	obj[4] = obj[4] + 1 + obj[5] - Index
+	obj[5] = Index
+	if !obj[3]
+		obj[3] = {obj[4] - 1}LatestClose
+		if !obj[3]
+			return
+		end
+	end
+	tr = 0
+	high = {obj[4]}High
+	low = {obj[4]}Low
+	if high && low
+		tr = Max(Max(high - low, high - obj[3]), obj[3] - low)
+		obj[3] = {obj[4]}Close
+	end
+	WilderMA_next(obj[2], tr)
+	if obj[2][0] == null
+		return
+	end
+	obj[0] = obj[1]
+	obj[1] = obj[2][0]
+end
+
+def ATR_draw(obj, color)
+	MA_draw(obj, color)
+end
+
+def ATR_value(obj)
+	return obj[1]
+end
+
+#==== 一目均衡表
+
+# IchimokuMedian 
+# 当日を含むn日間の中央値を計算する。
+
+def IchimokuMedian_new(days)
+	obj = [2]
+	obj[0] = null
+	obj[1] =  HighLow_new(days)
+	if HighLow_high(obj[1]) && HighLow_low(obj[1])
+		obj[0] = (HighLow_high(obj[1]) + HighLow_low(obj[1])) / 2
+	end
+	return obj
+end
+
+def IchimokuMedian_next(obj)
+	HighLow_next(obj[1])
+	if HighLow_high(obj[1]) && HighLow_low(obj[1])
+		obj[0] = (HighLow_high(obj[1]) + HighLow_low(obj[1])) / 2
+	end
+end
+
+def Ichimoku_new(tenkan, kijun, span)
+	obj = [16]
+	obj[0] = null // previous 基準線
+	obj[1] = null // current 基準線
+	obj[2] = null // previous 転換線
+	obj[3] = null // current 転換線
+	obj[4] = null // previous 先行スパン1
+	obj[5] = null // current 先行スパン1
+	obj[6] = null // previous 先行スパン2
+	obj[7] = null // current 先行スパン2
+	obj[8] = null // previous 遅行スパン
+	obj[9] = null // current 遅行スパン
+	obj[10] = IchimokuMedian_new(kijun) // 基準線
+	obj[11] = IchimokuMedian_new(tenkan) // 転換線
+	obj[12] = {-kijun+1}IchimokuMedian_new(kijun) // 先行スパン1
+	obj[13] = {-kijun+1}IchimokuMedian_new(tenkan) // 先行スパン1
+	obj[14] = {-kijun+1}IchimokuMedian_new(span) // 先行スパン2
+	obj[15] = kijun
+	obj[1] = obj[10][0]
+	obj[3] = obj[11][0]
+	if obj[12][0] && obj[13][0]
+		obj[5] = (obj[12][0] + obj[13][0]) / 2
+	end
+	obj[7] = obj[14][0]
+	obj[9] = {kijun - 1}LatestClose
+	return obj
+end
+
+def Ichimoku_next(obj)
+	i = 0
+	while i < 5 
+		obj[i * 2] = obj[i * 2 + 1]
+		i = i + 1
+	end
+	IchimokuMedian_next(obj[10])
+	IchimokuMedian_next(obj[11])
+	IchimokuMedian_next(obj[12])
+	IchimokuMedian_next(obj[13])
+	IchimokuMedian_next(obj[14])
+	obj[1] = obj[10][0]
+	obj[3] = obj[11][0]
+	if obj[12][0] && obj[13][0]
+		obj[5] = (obj[12][0] + obj[13][0]) / 2
+	end
+	obj[7] = obj[14][0]
+	obj[9] = {obj[15] - 1}LatestClose
+end
+
+def Ichimoku_fillKumo(obj, uekumo, shitakumo)
+	if !(obj[4] && obj[5] && obj[6] && obj[7])
+		return
+	end
+	senko1 = obj[4]
+	senko2 = obj[6]
+	ratio1 = (float)(obj[5] - obj[4]) / Dx
+	ratio2 = (float)(obj[7] - obj[6]) / Dx
+	x = {-1}X
+	low = [2]; high = [2]
+	while x < X
+		if senko1 > senko2
+			color = uekumo;
+		else
+			color = shitakumo;
+		end
+		DrawLine(color, x, senko1, x, senko2)
+		x = x + 1
+		senko1 = senko1 + ratio1
+		senko2 = senko2 + ratio2
+	end
+end
+
+def Ichimoku_repairCandle(yo, in)
+	if Close
+		DrawLine(in, X, Low, X, High)
+		if Close > Open
+			FillRectangle(yo, X, Open, Dx/2, Close-Open)
+			DrawLine(in, X, Open, X+Dx/2-1, Open)
+			DrawLine(in, X, Close, X+Dx/2-1, Close)
+			DrawLine(in, X+Dx/2-1, Close, X+Dx/2-1, Open)
+		elsif Close < Open
+			FillRectangle(in, X, Close, Dx/2, Open-Close)
+		else
+			DrawLine(in, X, Close, X+Dx/2-1, Close)
+		end
+	end
+end
+
+def Ichimoku_draw(obj, kijun, tenkan, senko1, senko2, chiko)
+	if obj[4] && obj[5]
+		DrawLine(senko1, {-1}X, obj[4], X, obj[5])
+	end
+	if obj[6] && obj[7]
+		DrawLine(senko2, {-1}X, obj[6], X, obj[7])
+	end
+	if obj[0] && obj[1]
+		DrawLine(kijun, {-1}X, obj[0], X, obj[1])
+	end
+	if obj[2] && obj[3]
+		DrawLine(tenkan, {-1}X, obj[2], X, obj[3])
+	end
+	if obj[8] && obj[9]
+		DrawLine(chiko, {-1}X, obj[8], X, obj[9])
+	end
+end
+
+def Ichimoku_kijun(obj)
+	return obj[1]
+end
+
+def Ichimoku_tenkan(obj)
+	return obj[3]
+end
+
+def Ichimoku_senko1(obj)
+	return obj[5]
+end
+
+def Ichimoku_senko2(obj)
+	return obj[7]
+end
+
+def Ichimoku_chiko(obj)
+	return obj[9]
+end
+
+#==== Drawing functions of various chart types
+
+# Candlesticks
+
+def Candle_draw(yo, in)
+	if Close
+		DrawLine(in, X, Low, X, High)
+		if Close > Open
+			FillRectangle(yo, X-Dx/2+1, Open, Dx-1, Close-Open)
+			DrawRectangle(in, X-Dx/2+1, Open, Dx-2, Close-Open)
+		elsif Close < Open
+			FillRectangle(in, X-Dx/2+1, Close, Dx-1, Open-Close)
+		else
+			DrawLine(in, X-Dx/2+1, Close, X+Dx/2-1, Close)
+		end
+	end
+end
+
+# Bar Charts
+
+def Bar_draw(color)
+	if Close
+		DrawLine(color, X, Low, X, High)
+		DrawLine(color, X-Dx/2, Open, X, Open)
+		DrawLine(color, X, Close, X+Dx/2, Close)
+	end
+end
+
+# Volume
+
+def Volume_draw(color)
+	DrawLine(color, X, 0, X, Volume)
+end
+
+#==== Utility classes for trading Systems
+
+# 指標の交差を調べる
+
+def Crossover_new
+	return Crossover_new(0, 0)
+end
+
+# ちゃぶつきを消すための日数と閾値を指定して生成する。
+def Crossover_new(days, threshold)
+	obj = [5]
+	obj[0] = 0 // state
+	obj[1] = 0 // period
+	obj[2] = days
+	obj[3] = threshold
+	obj[4] = null // state has been chenged but not reported yet
+	return obj
+end
+
+# このメソッドの返値が値が0でないなら、指標が交差した後、days日間
+# 再び交差せず、かつthreshold以上差が開いている。値は二つの指標の
+# 差をあらわす。正ならaがbの上に負なら下に交差している。
+def Crossover_next(obj, a, b)
+	diff = a - b
+	if obj[0] == 0
+		obj[0] = diff
+	elsif obj[0] > 0 && diff < 0 || obj[0] < 0 && diff > 0
+		obj[0] = diff
+		obj[1] = 0
+		if obj[4] == null
+			obj[4] = diff
+		else
+			obj[4] = null
+		end
+	else
+		obj[1] = obj[1] + 1
+	end
+	if obj[4] != null && Abs(a - b) > obj[3] && obj[1] >= obj[2]
+		obj[4] = null
+		return a - b
+	end
+	return 0
+end
+
+# 指標の反転を調べる
+
+def Reversal_new
+	return Reversal_new(0, 0)
+end
+
+# ちゃぶつきを消すための日数と閾値を指定して生成する。
+def Reversal_new(days, threshold)
+	obj = [6]
+	obj[0] = 0 // state
+	obj[1] = 0 // period
+	obj[2] = null // previous
+	obj[3] = days
+	obj[4] = threshold
+	obj[5] = null // result
+	return obj
+end
+
+# このメソッドの返値が0でないなら、指標が反転後days日間傾向が継続して
+# おり、かつ現在と反転時の差がthreshold以上開いている。値は反転時と
+# 現在の幅を表す。正の値は上昇への反転を負の値は下降への反転を表す。
+def Reversal_next(obj, a)
+	if obj[2] == null
+		obj[2] = a
+		return 0
+	end
+	diff = a - obj[2]
+	if obj[0] == 0
+		obj[0] = diff
+	elsif obj[0] > 0 && diff < 0 || obj[0] < 0 && diff > 0
+		obj[0] = diff
+		obj[1] = 0
+		if obj[5] == null
+			obj[5] = obj[2]
+		else
+			obj[5] = null
+		end
+	else
+		obj[1] = obj[1] + 1
+	end
+	obj[2] = a
+	if obj[5] != null && Abs(a - obj[5]) > obj[4] && obj[1] >= obj[3]
+		result = a - obj[5]
+		obj[5] = null
+		return result
+	end
+	return 0
+end
+
+#==== 移動平均乖離率（出来高）
+
+def DiffVolumeMA_new(days)
+        obj = [3]
+        obj[0] = null // previous % difference
+        obj[1] = null // current % difference
+        obj[2] = VolumeMA_new(days)
+        DiffVolumeMA_calc(obj)
+        return obj
+end
+
+def DiffVolumeMA_next(obj)
+        VolumeMA_next(obj[2])
+        DiffVolumeMA_calc(obj)
+end
+
+def DiffVolumeMA_calc(obj)
+        obj[0] = obj[1]
+        if obj[2][1]
+                obj[1] = 100.0 * ({obj[2][3]}Volume - obj[2][1]) / obj[2][1]
+        end
+end
+
+def DiffVolumeMA_draw(obj, color)
+        VolumeMA_draw(obj, color)
+end
+
+def DiffVolumeMA_value(obj)
+        return obj[1]
+end
+
+#==== 篠原・強弱レシオ（ABレシオ）
+# AB[A]ならtypeに0をAB[B]なら1にする
+
+def ABratio_new(days, type)
+        obj = [8]
+        obj[0] = null # previous  AB
+        obj[1] = null # current AB
+        obj[2] = type # type
+        obj[3] = MAutil_new(days) # numerator
+        obj[4] = MAutil_new(days) # denominator
+        obj[5] = {-days}LatestClose # 不要
+        obj[6] = -days
+        obj[7] = Index
+        while obj[6] < 0
+                ABratio_next(obj)
+        end
+        obj[6] = at
+        obj[7] = {-at}Index
+        return obj
+end
+
+def ABratio_next(obj)
+        obj[6] = obj[6] + 1 + obj[7] - Index
+        obj[7] = Index        
+        obj[0] = obj[1]
+        if !obj[5]
+                obj[5] = {obj[6]-1}Close
+                if !obj[5]
+                        return
+                end
+        end
+        close1 = {obj[6]-1}Close
+        high   = {obj[6]}High
+        open   = {obj[6]}Open
+        low    = {obj[6]}Low
+        if obj[2] == 0
+                # Aレシオ = X日間のA1(強エネルギー)合計 ÷ X日間のA2(弱エネルギー)合計 × 100
+                AB_typeA_calc(obj[3], obj[4], high, open, low, close1)
+        else
+                # Bレシオ = X日間のB1(強人気)合計 ÷ X日間のB2(弱人気)合計 × 100
+                AB_typeB_calc(obj[3], obj[4], high, open, low, close1)
+        end
+        if obj[3][0] != null && obj[4][1] != 0.0
+                obj[1] = 100.0 * obj[3][1] / obj[4][1]
+        end
+        return
+end
+
+def AB_typeA_calc(n, d, high, open, low, close1)
+        # A1(強エネルギー) = 当日高値 - 当日始値
+        a1 = high - open
+        # A2(弱エネルギー) = 当日始値 - 当日安値
+        a2 = open - low
+
+        MAutil_next(n, a1)
+        MAutil_next(d, a2)
+end
+
+def AB_typeB_calc(n, d, high, open, low, close1)
+        # B1(強人気) = 当日高値 - 前日終値
+        b1 = high - close1
+        # B2(弱人気) = 前日終値 - 当日安値
+        b2 = close1 - low
+
+        MAutil_next(n, b1)
+        MAutil_next(d, b2)
+end
+
+def ABratio_draw(obj, color)
+        MA_draw(obj, color)
+end
+
+def ABratio_value(obj)
+        return obj[1]
+end
+
+# Local Variables:
+# tab-width: 4
+# End:
