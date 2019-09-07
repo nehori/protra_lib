@@ -2194,7 +2194,7 @@ def ABratio_new(days, type)
         obj[2] = type # type
         obj[3] = MAutil_new(days) # numerator
         obj[4] = MAutil_new(days) # denominator
-        obj[5] = null # •s—v
+        obj[5] = {-days}LatestClose # fallback closing price
         obj[6] = -days
         obj[7] = Index
         while obj[6] < 0
@@ -2209,6 +2209,12 @@ def ABratio_next(obj)
         obj[6] = obj[6] + 1 + obj[7] - Index
         obj[7] = Index        
         obj[0] = obj[1]
+        if !obj[5]
+                obj[5] = {obj[6]-1}Close
+                if !obj[5]
+                        return
+		end
+	end
         close1 = {obj[6]-1}Close
         high   = {obj[6]}High
         open   = {obj[6]}Open
