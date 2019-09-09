@@ -1,5 +1,23 @@
 
 // =========================================
+// 過去の$signalcnt日間の平均サイン点灯数を返す
+// =========================================
+def SignalCount()
+        $signal[$sflag] = $buyCnt
+        $sflag = ($sflag + 1) % $signalcnt
+        i = 0
+        sum = 0
+        while (i < $signalcnt)
+                if ($signal[i] == -1)
+                       return 9999
+                end
+                sum = sum + $signal[i]
+                i = i + 1
+        end
+        return sum / $signalcnt
+end
+
+// =========================================
 // 過去X日間の高値
 // [In] num	X日間
 // =========================================

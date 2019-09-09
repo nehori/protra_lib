@@ -25,14 +25,16 @@ def Init()
         $ratiodate  = [$udcount]  // 騰落レシオ日数
         $up         = [$udcount]  // 値上がり銘柄数
         $down       = [$udcount]  // 値下がり銘柄数
-// その他 ----------------------------------------
+// 過去X日平均サイン -----------------------------
+        $signal     = [$signalcnt]// 過去x日平均サイン
+        $sflag      = 0           // 平均サインのフラグ
 //      　$totalfee   = 0         // 手数料合計
 end
 
 //====================
-// 初期化（騰落レシオ）
+// 初期化（騰落レシオ・過去x日平均サイン）
 //====================
-def InitUpDownRatio()
+def InitDone()
         i = 0
         while (i < $udcount)
                 $up[i]   = [$ratiodate[i]]
@@ -44,6 +46,11 @@ def InitUpDownRatio()
                         j = j + 1
                 end
                 $ratio[i] = 0
+                i = i + 1
+        end
+        i = 0
+        while (i < $signalcnt)
+                $signal[i] = -1
                 i = i + 1
         end
 end
