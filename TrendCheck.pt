@@ -1,5 +1,21 @@
+
+// =========================================
+// 過去X日間の高値
+// [In] num	X日間
+// =========================================
+def CheckPastHigh(num)
+        i = 1
+        high = {-1}High
+        while (i < num)
+                high = Max({-1 * i}High, high)
+                i = i + 1
+        end
+        return high
+end
+
 // =========================================
 // 平均売買代金（株価 x 出来高 / 日数）を返す
+// [In] num	日数
 // =========================================
 def TradingValume(num)
         i = 0
@@ -19,92 +35,94 @@ end
 //==================================================
 def UpDownRatio()
         // 騰落レシオの計算
-        p = 0
-        notall = 0
-        while (p < $ratiodate)
-                if ($up[p] == -1 || p == $ratiodate - 1)
-                        if ($up[p] == -1)
-                                // 騰落率の計算に必要な日数分だけ値上がり銘柄数、値下がり銘柄数の
-                                // データがまだ揃っていないとき
-                                notall = 1
-                        else
-                                // $ratiodate日目の値上がり銘柄数、値下がり銘柄数が存在しているときは
-                                 // 1日分過去にずらす
-                                // (新しい値上がり銘柄数、値下がり銘柄数で上書きされるのを避けるため)
-                                $up[p-1]   = $up[p] 
-                                $down[p-1] = $down[p] 
-                        end
-                                // 計算する日の値上がり銘柄数、値下がり銘柄数を初期化
-                                $up[p]        = 0
-                                $down[p] = 0
+        i = 0
+        while (i < $udcount)
+                p = 0
+                notall = 0
+                while (p < $ratiodate[i])
+                        if ($up[i][p] == -1 || p == $ratiodate[i] - 1)
+                                if ($up[i][p] == -1)
+                                        // 騰落率の計算に必要な日数分だけ値上がり銘柄数、値下がり銘柄数の
+                                        // データがまだ揃っていないとき
+                                        notall = 1
+                                else
+                                        // $ratiodate日目の値上がり銘柄数、値下がり銘柄数が存在しているときは
+                                        // 1日分過去にずらす
+                                        // (新しい値上がり銘柄数、値下がり銘柄数で上書きされるのを避けるため)
+                                        $up[i][p-1]   = $up[i][p] 
+                                        $down[i][p-1] = $down[i][p] 
+                                end
+                                        // 計算する日の値上がり銘柄数、値下がり銘柄数を初期化
+                                        $up[i][p]   = 0
+                                        $down[i][p] = 0
 
-                        // 東証1部値上がり銘柄数、値下がり銘柄数の計算
-                        c = 1301
-                        while (c < 9999)
-                                cc = (string)c 
-                                // 東証1部銘柄ではないときは計算せずに次の銘柄へ進む
-                                if {cc}Market != "T1"
+                                // 東証1部値上がり銘柄数、値下がり銘柄数の計算
+                                c = 1301
+                                while (c < 9999)
+                                        cc = (string)c 
+                                        // 東証1部銘柄ではないときは計算せずに次の銘柄へ進む
+                                        if {cc}Market != "T1"
+                                                c = c + 1
+                                                continue
+                                        end
+
+                                        if ({cc}Market == "T1" && {cc}Close && {-1}{cc}Close && {cc}Close > {-1}{cc}Close)
+                                                // 東証1部銘柄で、当日と前日の終値が存在していて、当日の終値の方が高い
+                                                $up[i][p] = $up[i][p] + 1
+                                        elsif ({cc}Market == "T1" && {cc}Close && {-1}{cc}Close && {cc}Close < {-1}{cc}Close)
+                                                // 東証1部銘柄で、当日と前日の終値が存在していて、当日の終値の方が安い
+                                                $down[i][p] = $down[i][p] + 1
+                                        end
                                         c = c + 1
-                                        continue
                                 end
 
-                                if ({cc}Market == "T1" && {cc}Close && {-1}{cc}Close && {cc}Close > {-1}{cc}Close)
-                                        // 東証1部銘柄で、当日と前日の終値が存在していて、当日の終値の方が高い
-                                        $up[p] = $up[p] + 1
-                                elsif ({cc}Market == "T1" && {cc}Close && {-1}{cc}Close && {cc}Close < {-1}{cc}Close)
-                                        // 東証1部銘柄で、当日と前日の終値が存在していて、当日の終値の方が安い
-                                        $down[p] = $down[p] + 1
+                                // 騰落率の計算に必要な日数分まだデータが揃っていないときは次の日に進む
+                                if (notall == 1)
+                                        return
                                 end
-                                c = c + 1
+
+                        else
+                                if (p > 0 && p < $ratiodate[i] -1 && $up[i][$ratiodate[i]-1] != -1)
+                                        // 2日目から($ratiodate-1)日目について、値上がり銘柄数、値下がり銘柄数の
+                                        // データが存在しているときは、1日分過去にずらす
+                                        $up[i][p-1]   = $up[i][p]
+                                        $down[i][p-1] = $down[i][p]
+                                end
                         end
-
-                        // 騰落率の計算に必要な日数分まだデータが揃っていないときは次の日に進む
-                        if (notall == 1)
+                        p = p + 1
+                end
+                // $ratiodate日分の値上がり銘柄数のデータに1つでも0があれば、騰落レシオを計算
+                // するために十分な数の株式がまだ上場されていないと判断して日付を進める
+                j = 0
+                while (j < $ratiodate[i])
+                        if ($up[i][j] < 1)
                                 return
                         end
+                        j = j + 1
+                end
 
+                j         = 0
+                sumup     = 0        // $ratiodate日分の値上がり銘柄数の合計
+                sumdown   = 0        // $ratiodate日分の値下がり銘柄数の合計
+                $ratio[i] = 0        // 騰落レシオ
+                while (j < $ratiodate[i])
+                         sumup   = sumup + $up[i][j]
+                         sumdown = sumdown + $down[i][j]
+                         j = j + 1
+                end
+
+                if (sumdown > 0)
+                         $ratio[i] = (float)sumup / (float)sumdown * 100
                 else
-                        if (p > 0 && p < $ratiodate -1 && $up[$ratiodate-1] != -1)
-                                // 2日目から($ratiodate-1)日目について、値上がり銘柄数、値下がり銘柄数の
-                                // データが存在しているときは、1日分過去にずらす
-                                $up[p-1]        = $up[p]
-                                $down[p-1] = $down[p]
-                        end
+                         return 
                 end
-                p = p + 1
-        end
 
-        // $ratiodate日分の値上がり銘柄数のデータに1つでも0があれば、騰落レシオを計算
-        // するために十分な数の株式がまだ上場されていないと判断して日付を進める
-        j = 0
-        while (j < $ratiodate)
-                if ($up[j] < 1)
-                        return
-                end
-                j = j + 1
+                Print("[" + i + "]")
+                Print("値上がり銘柄数 = "+ $up[i][$ratiodate[i] - 1])
+                Print("値下がり銘柄数 = "+ $down[i][$ratiodate[i] - 1])
+                Print("騰落レシオ = "+ $ratio[i])
+                i = i + 1
         end
-
-        j       = 0
-        sumup   = 0        // $ratiodate日分の値上がり銘柄数の合計
-        sumdown = 0        // $ratiodate日分の値下がり銘柄数の合計
-        $ratio  = 0        // 騰落レシオ
-        while (j < $ratiodate)
-                sumup        = sumup + $up[j]
-                sumdown = sumdown + $down[j]
-                j = j + 1
-        end
-
-        if (sumdown > 0)
-                $ratio = (float)sumup / (float)sumdown * 100
-        else
-                return 
-        end
-
-        Print("-------------------------------------------------")
-        Print("日付 = "+ Year + "/" + Month + "/" + Day)
-        Print("値上がり銘柄数 = "+ $up[$ratiodate - 1])
-        Print("値下がり銘柄数 = "+ $down[$ratiodate - 1])
-        Print("騰落レシオ = "+ $ratio)
 end
 
 //==================================================

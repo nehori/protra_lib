@@ -2,6 +2,7 @@
 // 初期化
 //====================
 def Init()
+        $budget     = $budgetIni
 //------------------------------------------------
         $set        = [$code_num]
         $buy        = [$code_num]
@@ -11,7 +12,7 @@ def Init()
         $buyflag    = [$code_num * 2]
         $sellflag   = [$code_num]
         $buyCnt     = 0
-        $sortCnt    = 0 // 昇順/降順ソーティング
+        $sortCnt    = 0      // 昇順/降順ソーティング
         $sortList1  = [$code_num]  // 昇順/降順変数値
         $sortList2  = [$code_num]  // 証券コード
         i = 0
@@ -20,17 +21,31 @@ def Init()
                 i = i + 1
         end
 // 騰落レシオ計算用 ------------------------------
-        $ratio      = 0
-        $up         = [$ratiodate] // 値上がり銘柄数
-        $down       = [$ratiodate] // 値下がり銘柄数
+        $ratio      = [$udcount]  // 騰落レシオ値
+        $ratiodate  = [$udcount]  // 騰落レシオ日数
+        $up         = [$udcount]  // 値上がり銘柄数
+        $down       = [$udcount]  // 値下がり銘柄数
+// その他 ----------------------------------------
+//      　$totalfee   = 0         // 手数料合計
+end
+
+//====================
+// 初期化（騰落レシオ）
+//====================
+def InitUpDownRatio()
         i = 0
-        while (i < $ratiodate)
-                $up[i]   = -1
-                $down[i] = -1
+        while (i < $udcount)
+                $up[i]   = [$ratiodate[i]]
+                $down[i] = [$ratiodate[i]]
+                j = 0
+                while (j < $ratiodate[i])
+                        $up[i][j]   = -1
+                        $down[i][j] = -1
+                        j = j + 1
+                end
+                $ratio[i] = 0
                 i = i + 1
         end
-// その他 ----------------------------------------
-//      　$totalfee   = 0          // 手数料合計
 end
 
 //====================
@@ -199,7 +214,7 @@ def BuyingClose(i,d)
                            {d}Buy(Close, $hold[i])
                   end
 //                  Fee($hold[i] * Close)
-                  Print("B 予算残り =" + $budget)
+                  Print("B 予算残り = " + $budget)
                   $set[i] = 0
          else
                   PrintLog("予算を超過しています")
@@ -230,7 +245,7 @@ def BuyingOpen(i,d)
                            {d}Buy(Open, $hold[i])
                   end
 //                  Fee($hold[i] * Open)
-                  Print("B 予算残り =" + $budget)
+                  Print("B 予算残り = " + $budget)
                   $set[i] = 0
          else
 //                  Print("購入額=" + ($long * {d}Open) + "予算残り =" + $budget)
