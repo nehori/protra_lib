@@ -26,7 +26,7 @@ def Init()
         $up         = [$udcount]  // 値上がり銘柄数
         $down       = [$udcount]  // 値下がり銘柄数
 // 過去X日平均サイン -----------------------------
-        $signal     = [$signalcnt]// 過去x日平均サイン
+        $signal     = [999]       // 過去X日平均サイン(MAX=99)
         $sflag      = 0           // 平均サインのフラグ
 //      　$totalfee   = 0         // 手数料合計
 end
@@ -49,9 +49,105 @@ def InitDone()
                 i = i + 1
         end
         i = 0
-        while (i < $signalcnt)
+        while (i < 999)
                 $signal[i] = -1
                 i = i + 1
+        end
+end
+
+// =========================================
+// 前日比(率)=(終値-前日の終値)÷前日の終値×100
+// =========================================
+def DayBfrRatio()
+    return ((float){at}Close - (float){at - 1}Close) / (float){at - 1}Close * 100
+end
+
+// =========================================
+// 始値→終値(率) = (終値-始値)÷始値×100
+// =========================================
+def OpenToClose()
+    return ((float)Close - (float)Open) / (float)Open * 100
+end
+
+// =========================================
+// 終値→高値(率) = (高値-終値)÷終値×100
+// =========================================
+def CloseToHigh()
+    return ((float)High - (float)Close) / (float)Close * 100
+end
+
+// =========================================
+// 値幅制限
+// =========================================
+def DailyPriceLimit(price)
+        if (100 > price)
+                return 30
+        elsif (200 > price)
+                return 50
+        elsif (500 > price)
+                return 80
+        elsif (700 > price)
+                return 100
+        elsif (1000 > price)
+                return 150
+        elsif (1500 > price)
+                return 300
+        elsif (2000 > price)
+                return 400
+        elsif (3000 > price)
+                return 500
+        elsif (5000 > price)
+                return 700
+        elsif (7000 > price)
+                return 1000
+        elsif (10000 > price)
+                return 1500
+        elsif (15000 > price)
+                return 3000
+        elsif (20000 > price)
+                return 4000
+        elsif (30000 > price)
+                return 5000
+        elsif (50000 > price)
+                return 7000
+        elsif (70000 > price)
+                return 10000
+        elsif (100000 > price)
+                return 15000
+        elsif (150000 > price)
+                return 30000
+        elsif (200000 > price)
+                return 40000
+        elsif (300000 > price)
+                return 50000
+        elsif (500000 > price)
+                return 70000
+        elsif (700000 > price)
+                return 100000
+        elsif (1000000 > price)
+                return 150000
+        elsif (1500000 > price)
+                return 300000
+        elsif (2000000 > price)
+                return 400000
+        elsif (3000000 > price)
+                return 500000
+        elsif (5000000 > price)
+                return 700000
+        elsif (7000000 > price)
+                return 1000000
+        elsif (10000000 > price)
+                return 1500000
+        elsif (15000000 > price)
+                return 3000000
+        elsif (2000000 > price)
+                return 4000000
+        elsif (3000000 > price)
+                return 5000000
+        elsif (5000000 > price)
+                return 7000000
+        else
+                return 10000000
         end
 end
 
@@ -146,9 +242,9 @@ def Sort(i)
                            a1 = a1 + 1
                   end
 
-                  // 使用した$buyflag 配列を初期化
-                  $buyflag[i][0] = 0
-                  $buyflag[i][1] = 0
+//                  // 使用した$buyflag 配列を初期化
+//                  $buyflag[i][0] = 0
+//                  $buyflag[i][1] = 0
          end
 end
 

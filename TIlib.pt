@@ -2153,6 +2153,37 @@ def Reversal_next(obj, a)
 	return 0
 end
 
+#==== 移動平均乖離率（高値）
+
+def DiffHighMA_new(days)
+        obj = [3]
+        obj[0] = null // previous % difference
+        obj[1] = null // current % difference
+        obj[2] = MA_new(days)
+        DiffMA_calc(obj)
+        return obj
+end
+
+def DiffHighMA_next(obj)
+        MA_next(obj[2])
+        DiffMA_calc(obj)
+end
+
+def DiffHighMA_calc(obj)
+        obj[0] = obj[1]
+        if obj[2][1]
+                obj[1] = 100.0 * ({obj[2][3]}High - obj[2][1]) / obj[2][1]
+        end
+end
+
+def DiffHighMA_draw(obj, color)
+        MA_draw(obj, color)
+end
+
+def DiffHighMA_value(obj)
+        return obj[1]
+end
+
 #==== 移動平均乖離率（出来高）
 
 def DiffVolumeMA_new(days)
@@ -2213,8 +2244,8 @@ def ABratio_next(obj)
                 obj[5] = {obj[6]-1}Close
                 if !obj[5]
                         return
-		end
-	end
+                end
+        end
         close1 = {obj[6]-1}Close
         high   = {obj[6]}High
         open   = {obj[6]}Open
