@@ -59,21 +59,30 @@ end
 // 前日比(率)=(終値-前日の終値)÷前日の終値×100
 // =========================================
 def DayBfrRatio()
-    return ((float){at}Close - (float){at - 1}Close) / (float){at - 1}Close * 100
+         if ! ({at}Close && {at - 1}Close)
+                  return
+         end
+         return ((float){at}Close - (float){at - 1}Close) / (float){at - 1}Close * 100
 end
 
 // =========================================
 // 始値→終値(率) = (終値-始値)÷始値×100
 // =========================================
 def OpenToClose()
-    return ((float)Close - (float)Open) / (float)Open * 100
+         if ! (Close && Open)
+                  return
+         end
+         return ((float)Close - (float)Open) / (float)Open * 100
 end
 
 // =========================================
 // 終値→高値(率) = (高値-終値)÷終値×100
 // =========================================
 def CloseToHigh()
-    return ((float)High - (float)Close) / (float)Close * 100
+         if ! (High && Close)
+                  return
+         end
+         return ((float)High - (float)Close) / (float)Close * 100
 end
 
 // =========================================
@@ -183,6 +192,9 @@ end
 // 売買代金
 //==================================================
 def SalesValue()
+         if ! (Volume && Close)
+                  return
+         end
          return (int)(Volume * Close)
 end
 
@@ -261,6 +273,66 @@ end
 //==================================================
 def PricedataExistCheck(data)
          return !data         //存在する場合 0を返す
+end
+
+//==================================================
+// 購入可能かチェック
+//==================================================
+def CheckHighLow(t)
+         if ! ({1}High > t && t > {1}Low)
+                  return 0
+         end
+         return t
+end
+
+//==================================================
+// [翌日逆指値(終日)][値幅制限上限(-1Tick)]
+//==================================================
+def StopOrderPriceLimitTick()
+         m = DailyPriceLimit(Close)
+         t = Close - Yobine(Close + m, 0)
+         return CheckHighLow(t)
+end
+
+//==================================================
+// [翌日逆指値(終日)][高値(+1Tick)]
+//==================================================
+def StopOrderHighTick()
+         t = High + Yobine(High, 0)
+         return CheckHighLow(t)
+end
+
+//==================================================
+// [翌日逆指値(終日)][終値(-1Tick)]
+//==================================================
+def StopOrderCloseTick()
+         t = Close - Yobine(Close, 0)
+         return CheckHighLow(t)
+end
+
+//==================================================
+// [翌日指値(寄付)][終値(num%)]
+//==================================================
+def StopOrderClose(num)
+         t = Close * num
+         return CheckHighLow(t)
+end
+
+//==================================================
+// [翌日指値(寄付)][安値(num%)]
+//==================================================
+def StopOrderLow(num)
+         t = Low * num
+         return CheckHighLow(t)
+end
+
+//==================================================
+// [翌日逆指値(終日)][高値(+1Tick)]
+// [翌日始値(終日)][翌日始値(+1Tick)]
+//==================================================
+def StopOrderOpenTick()
+         t = {1}Open + Yobine({1}Open, 0)
+         return CheckHighLow(t)
 end
 
 //==================================================
@@ -354,6 +426,55 @@ def BuyingOpen(i,d)
 //                  Print("購入額=" + ($long * {d}Open) + "予算残り =" + $budget)
                   PrintLog("予算を超過しています")
          end
+end
+
+//==================================================
+// 指値買い
+// i:銘柄順序、d:何日後、t:金額
+//==================================================
+def BuyingLimitedPrice(i, d, t)
+
+         //資金が不足している場合は何もしない
+         if ($long == 0)
+                  return
+         end
+         //予算を超えない場合だけ買う
+         if ($long * t  <= $budget)
+                  if ($Interest == 1 || $Interest == 2)
+                           $budget = $budget - $long * t
+                  end
+                  $hold[i] = $long
+                  $buy[i] = t
+                  if ($shortSelling)
+                           {1}Sell((int)t, $hold[i])
+                  else
+                           {1}Buy((int)t, $hold[i])
+                  end
+                  Print("B 予算残り = " + $budget)
+                  $set[i] = 0
+         else
+                  PrintLog("予算を超過しています")
+         end
+end
+
+//==================================================
+// 指値売り
+// i:銘柄順序、d:何日後、t:金額
+//==================================================
+def SellingLimitedPrice(i, d, t)
+
+         if ($shortSelling)
+                  {d}Buy(t, $hold[i])
+         else
+                  {d}Sell(t, $hold[i])
+         end
+         if ($Interest == 2)
+                  $budget = $budget + t * $hold[i]
+         elsif ($Interest == 1)
+                  $budget = $budget + $buy[i] * $hold[i]
+         end
+         $hold[i] = 0
+         Print("S 予算残り = " + $budget)
 end
 
 //==================================================
