@@ -9,7 +9,7 @@ def Init()
         $hold       = [$code_num]
 // ソート処理 ------------------------------------
         $order      = [9999]
-        $buyflag    = [$code_num * 2]
+        $buyflag    = [$code_num * 3]
         $sellflag   = [$code_num]
         $buyCnt     = 0
         $sortCnt    = 0      // 昇順/降順ソーティング
@@ -17,7 +17,7 @@ def Init()
         $sortList2  = [$code_num]  // 証券コード
         i = 0
         while (i < $code_num)
-                $buyflag[i] = [2]
+                $buyflag[i] = [3]
                 i = i + 1
         end
 // 騰落レシオ計算用 ------------------------------
@@ -69,20 +69,20 @@ end
 // 始値→終値(率) = (終値-始値)÷始値×100
 // =========================================
 def OpenToClose()
-         if ! (Close && Open)
+         if ! ({at}Close && {at}Open)
                   return
          end
-         return ((float)Close - (float)Open) / (float)Open * 100
+         return ((float){at}Close - (float){at}Open) / (float){at}Open * 100
 end
 
 // =========================================
 // 終値→高値(率) = (高値-終値)÷終値×100
 // =========================================
 def CloseToHigh()
-         if ! (High && Close)
+         if ! ({at}High && {at}Close)
                   return
          end
-         return ((float)High - (float)Close) / (float)Close * 100
+         return ((float){at}High - (float){at}Close) / (float){at}Close * 100
 end
 
 // =========================================
@@ -217,6 +217,24 @@ def SortInit()
 end
 
 //==================================================
+// SortInit（$buyCnt抜き）
+//==================================================
+def SortInit2()
+         i = -1
+         while i + 1 < $buyCnt
+                  i = i + 1
+                  if ($reverse)
+                           $sortList1[i] = -9999 // 降順
+                  else
+                           $sortList1[i] = 9999  // 昇順
+                  end
+                  $sortList2[i] = 0
+         end
+//         $buyCnt  = 0
+         $sortCnt = 0
+end
+
+//==================================================
 // Swap
 //==================================================
 def Swap(i, a1)
@@ -232,7 +250,7 @@ def Swap(i, a1)
 end
 
 //==================================================
-// 昇順/降順($reverse = 1)にソート
+// 昇順/降順($reverse = 1)にソート（各種ストラテジーの買いをまとめて扱う）
 //==================================================
 def Sort(i)
          a1 = 0
@@ -253,11 +271,64 @@ def Sort(i)
                            end
                            a1 = a1 + 1
                   end
-
-//                  // 使用した$buyflag 配列を初期化
-//                  $buyflag[i][0] = 0
-//                  $buyflag[i][1] = 0
          end
+end
+
+//==================================================
+// Flagが一致したものだけソート
+//==================================================
+def SortWflag(i, flag)
+         a1 = 0
+         // Main関数で買いルールを満たした銘柄
+         if ($buyflag[i][0] == flag)
+                  while (a1 < $buyCnt) // 一件ずつ
+                           if (a1 == $sortCnt)
+                                    $sortList1[a1] = $buyflag[i][1] // 昇順/降順ソーティングに使用する変数値
+                                    $sortList2[a1] = Code     //証券コードを記録
+                                    $sortCnt = $sortCnt + 1
+                                    break
+                           elsif ($reverse && $buyflag[i][1] > $sortList1[a1])
+                                    Swap(i, a1)
+                                    break
+                           elsif (! $reverse && $buyflag[i][1] < $sortList1[a1])
+                                    Swap(i, a1)
+                                    break
+                           end
+                           a1 = a1 + 1
+                  end
+         end
+end
+
+//====================
+// 優先ストラテジーに応じた買い処理
+//  flag: 処理する購入フラグ = $buyflag[i][0]
+//   max: サイン点灯数がmax値超えると購入（通常1を設定）
+// codes: codesを設定
+//====================
+def BuyLoop(flag, max, codes)
+        // ソート関連のデータ初期化
+        SortInit2()
+
+        i = -1
+        while (i + 1 < $code_num)
+                i = i + 1
+                {codes[i]}SortWflag(i, flag)
+        end
+        i = -1
+        buy = 0
+        while (i + 1 < $buyCnt)
+                i = i + 1
+                  if ($sortList2[i])
+                        buy = buy + 1
+                  end
+        end
+        i = -1
+        if (max <= buy)
+               while (i + 1  < $buyCnt)
+                       i = i + 1
+                       {$sortList2[i]}SortBuy(i)
+               end
+        end
 end
 
 //==================================================
@@ -281,6 +352,17 @@ end
 def CheckHighLow(t)
          if ! ({1}High > t && t > {1}Low)
                   return 0
+         end
+         if ($shortSelling)
+                  // [売り] 翌日始値が指値以上なら約定
+                  if ! ({1}Open >= t)
+                           return 0
+                  end
+         else
+                  // [買い] 翌日始値が指値以下なら約定
+                  if ! (t >= {1}Open)
+                           return 0
+                  end
          end
          return t
 end
@@ -340,6 +422,7 @@ end
 //==================================================
 def Buying(i)
          if (0 == PricedataExistCheck({1}Open))
+
                   BuyingOpen(i,1)
          else
                   if (1 == PricedataExistCheck({2}Open))
@@ -370,8 +453,9 @@ end
 //==================================================
 def BuyingClose(i,d)
 
-         //資金が不足している場合は何もしない
+         //購入数がゼロの場合は何もしない
          if ($long == 0)
+//                  PrintLog("購入数がゼロ")
                   return
          end
 
@@ -401,8 +485,9 @@ end
 //==================================================
 def BuyingOpen(i,d)
 
-         //資金が不足している場合は何もしない
+         //購入数がゼロの場合は何もしない
          if ($long == 0)
+//                  PrintLog("購入数がゼロ")
                   return
          end
 
@@ -423,7 +508,7 @@ def BuyingOpen(i,d)
                   Print("B 予算残り = " + $budget)
                   $set[i] = 0
          else
-//                  Print("購入額=" + ($long * {d}Open) + "予算残り =" + $budget)
+                  Print("購入額=" + ($long * {d}Open) + "予算残り =" + $budget)
                   PrintLog("予算を超過しています")
          end
 end
@@ -446,14 +531,14 @@ def BuyingLimitedPrice(i, d, t)
                   $hold[i] = $long
                   $buy[i] = t
                   if ($shortSelling)
-                           {1}Sell((int)t, $hold[i])
+                           {d}Sell((int)t, $hold[i])
                   else
-                           {1}Buy((int)t, $hold[i])
+                           {d}Buy((int)t, $hold[i])
                   end
                   Print("B 予算残り = " + $budget)
                   $set[i] = 0
          else
-                  PrintLog("予算を超過しています")
+//                  PrintLog("予算を超過しています")
          end
 end
 
