@@ -425,10 +425,13 @@ def Buying(i)
 
                   BuyingOpen(i,1)
          else
+                  // 翌日始値がない
                   if (1 == PricedataExistCheck({2}Open))
                            BuyingClose(i,0)
                   else
-                           BuyingOpen(i,2)
+                           // BuyingOpen(i,2)
+                           // 翌々日の始値で買うが、日付は翌日にする
+                           BuyingLimitedPrice(i, 1, {2}Open)
                   end
          end
 end
@@ -443,7 +446,9 @@ def Selling(i)
                   if (1 == PricedataExistCheck({2}Open))
                            SellingClose(i,0)
                   else
-                           SellingOpen(i,2)
+                           // SellingOpen(i,2)
+                           // 翌々日の始値で売るが、日付は翌日にする
+                           SellingLimitedPrice(i, 1, {2}Open)
                   end
          end
 end
@@ -521,7 +526,7 @@ def BuyingLimitedPrice(i, d, t)
 
          //資金が不足している場合は何もしない
          if ($long == 0)
-                  return
+                  return 0
          end
          //予算を超えない場合だけ買う
          if ($long * t  <= $budget)
@@ -537,9 +542,11 @@ def BuyingLimitedPrice(i, d, t)
                   end
                   Print("B 予算残り = " + $budget)
                   $set[i] = 0
+                  return 1
          else
 //                  PrintLog("予算を超過しています")
          end
+         return 0
 end
 
 //==================================================
