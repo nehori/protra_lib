@@ -425,7 +425,6 @@ def Buying(i)
 
                   BuyingOpen(i,1)
          else
-                  // —‚“úŽn’l‚ª‚È‚¢
                   if (1 == PricedataExistCheck({2}Open))
                            BuyingClose(i,0)
                   else
@@ -542,11 +541,9 @@ def BuyingLimitedPrice(i, d, t)
                   end
                   Print("B —\ŽZŽc‚è = " + $budget)
                   $set[i] = 0
-                  return 1
          else
 //                  PrintLog("—\ŽZ‚ð’´‰ß‚µ‚Ä‚¢‚Ü‚·")
          end
-         return 0
 end
 
 //==================================================
