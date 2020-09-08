@@ -342,8 +342,12 @@ end
 //==================================================
 // データの有無を確認
 //==================================================
+def HasPricedata(data)
+         return (data)       //存在する場合 1を返す
+end
+
 def PricedataExistCheck(data)
-         return !data         //存在する場合 0を返す
+         return !data        // 互換性の為に残す
 end
 
 //==================================================
@@ -421,35 +425,46 @@ end
 // 買い（共通条件）
 //==================================================
 def Buying(i)
-         if (0 == PricedataExistCheck({1}Open))
-
+         if (HasPricedata({1}Open))
+                  // 翌日の始値で買う
                   BuyingOpen(i,1)
+                  return 1
          else
-                  if (1 == PricedataExistCheck({2}Open))
-                           BuyingClose(i,0)
-                  else
-                           // BuyingOpen(i,2)
-                           // 翌々日の始値で買うが、日付は翌日にする
-                           BuyingLimitedPrice(i, 1, {2}Open)
+                  m = 2
+                  while (m < 10)
+                           if (HasPricedata({m}Open))
+                                    Print("欠損値 買い対応" + m)
+                                    BuyingOpen(i, m)
+                                    return 1
+                           end
+                           m = m + 1
                   end
          end
+         Print("[Error] 買い失敗")
+         return 0
 end
 
 //==================================================
 // 売り（共通条件）
 //==================================================
 def Selling(i)
-         if (0 == PricedataExistCheck({1}Open))
+         if (HasPricedata({1}Open))
+                  // 翌日の始値で売る
                   SellingOpen(i,1)
+                  return 1
          else
-                  if (1 == PricedataExistCheck({2}Open))
-                           SellingClose(i,0)
-                  else
-                           // SellingOpen(i,2)
-                           // 翌々日の始値で売るが、日付は翌日にする
-                           SellingLimitedPrice(i, 1, {2}Open)
+                  m = 2
+                  while (m < 10)
+                           if (HasPricedata({m}Open))
+                                    Print("欠損値 売り対応" + m)
+                                    SellingOpen(i, m)
+                                    return 1
+                           end
+                           m = m + 1
                   end
          end
+         Print("[Error] 売り失敗")
+         return 0
 end
 
 //==================================================
@@ -459,7 +474,6 @@ def BuyingClose(i,d)
 
          //購入数がゼロの場合は何もしない
          if ($long == 0)
-//                  PrintLog("購入数がゼロ")
                   return
          end
 
@@ -491,7 +505,6 @@ def BuyingOpen(i,d)
 
          //購入数がゼロの場合は何もしない
          if ($long == 0)
-//                  PrintLog("購入数がゼロ")
                   return
          end
 
