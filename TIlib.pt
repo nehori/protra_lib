@@ -2291,6 +2291,132 @@ def ABratio_value(obj)
         return obj[1]
 end
 
+# 3Daysï™êÕñ@
+
+def Days3_new(days)
+	obj = [15]
+	obj[0] = null // DP max
+	obj[1] = null // DP min
+	obj[9] = null // UP max
+	obj[10] = null// UP min
+	obj[2] = days // days
+	obj[3] = 0 // index of max
+	obj[4] = 0 // index of min
+	obj[11] = null // index of UP max
+	obj[12] = null// index of UP min
+	obj[5] = 0 // traded days of max
+	obj[6] = 0 // traded days of min
+	obj[13] = 0 // traded days of UP max
+	obj[14] = 0 // traded days of UP min
+	obj[7] = 0
+	obj[8] = Index
+	goback = days
+	while 1
+		obj[3] = Index - goback
+		obj[4] = obj[3]
+		obj[11] = Index - goback
+		obj[12] = obj[11]
+		obj[7] = - goback
+		while (obj[7] < 0)
+			Days3_next(obj)
+		end
+		if obj[0] != null || obj[9] != null || Index - goback < 0
+			break
+		end
+		goback = goback * 2
+		obj[5] = 0
+		obj[6] = 0
+		obj[13] = 0
+		obj[14] = 0
+	end
+	obj[7] = at
+	obj[8] = {-at}Index
+	return obj
+end
+
+def Days3_next(obj)
+	obj[7] = obj[7] + 1 - Index + obj[8]
+	obj[8] = Index
+	if !{obj[7]}Volume
+		return
+	end
+	obj[5] = obj[5] + 1
+	obj[6] = obj[6] + 1
+	obj[13] = obj[13] + 1
+	obj[14] = obj[14] + 1
+	if !obj[0] && obj[5] < obj[2]
+		return
+	end
+	if !obj[0] && obj[13] < obj[2]
+		return
+	end
+	i = obj[7]
+	days = 0
+	if obj[5] == obj[2] || obj[6] == obj[2] || obj[13] == obj[2] || obj[14] == obj[2]
+		obj[0] = null
+		obj[1] = null
+		obj[9] = null
+		obj[10] = null
+		i = Min(Min(obj[3], obj[4]), Min(obj[11], obj[12])) + 1 - Index
+		days = obj[2] - 1
+	end
+	while i <= obj[7]
+		if {i}Volume && {i + 1}Volume && {i + 2}Volume
+			open   = {i}Open
+			close  = {i}Close
+//			high = {i}High
+			high_1 = {i + 1}High
+			high_2 = {i + 2}High
+			low = {i}Low
+			index = {i}Index
+			//  DP MAX
+			if !obj[0] || obj[0] < low - open
+				obj[0] = low - open
+				obj[3] = index
+				obj[5] = days
+			end
+			//  DP MIN
+			if !obj[1] || obj[1] > low - open
+				obj[1] = low - open
+				obj[4] = index
+				obj[6] = days
+			end
+			//  UP MAX
+			up = Max(close, Max(high_1, high_2)) - low
+			if !obj[9] || obj[9] < up
+				obj[9]  = up
+				obj[11] = index
+				obj[13] = days
+			end
+			//  UP MIN
+			up = Max(close, Max(high_1, high_2)) - low
+			if !obj[10] || obj[10] > up
+				obj[10] = up
+				obj[12] = index
+				obj[14] = days
+			end
+			days = days - 1
+		end
+		i = i + 1
+	end
+end
+
+def Days3_dpmax(obj)
+	return obj[0]
+end
+
+def Days3_dpmin(obj)
+	return obj[1]
+end
+
+def Days3_upmax(obj)
+	return obj[9]
+end
+
+def Days3_upmin(obj)
+	return obj[10]
+end
+
 # Local Variables:
 # tab-width: 4
 # End:
