@@ -8,13 +8,14 @@ def Init()
         $buy        = [$code_num]
         $hold       = [$code_num]
 // ソート処理 ------------------------------------
-        $order      = [9999]
+        $maxCode    = 9999
+        $order      = [$maxCode]
         $buyflag    = [$code_num * 3]
         $sellflag   = [$code_num]
         $buyCnt     = 0
-        $sortCnt    = 0      // 昇順/降順ソーティング
-        $sortList1  = [$code_num]  // 昇順/降順変数値
-        $sortList2  = [$code_num]  // 証券コード
+        $sortCnt    = 0      // 昇順/降順ソーティング（削除予定）
+        $sortList1  = [$code_num]  // 昇順/降順変数値（削除予定）
+        $sortList2  = [$code_num]  // 証券コード（削除予定）
         i = 0
         while (i < $code_num)
                 $buyflag[i] = [3]
@@ -206,9 +207,9 @@ def SortInit()
          while i + 1 < $buyCnt
                   i = i + 1
                   if ($reverse)
-                           $sortList1[i] = -9999 // 降順
+                           $sortList1[i] = -9999 // 降順（削除予定）
                   else
-                           $sortList1[i] = 9999  // 昇順
+                           $sortList1[i] = 9999  // 昇順（削除予定）
                   end
                   $sortList2[i] = 0
          end
@@ -235,7 +236,7 @@ def SortInit2()
 end
 
 //==================================================
-// Swap
+// Swap（削除予定）
 //==================================================
 def Swap(i, a1)
          a2 = 0
@@ -251,6 +252,7 @@ end
 
 //==================================================
 // 昇順/降順($reverse = 1)にソート（各種ストラテジーの買いをまとめて扱う）
+// （削除予定）
 //==================================================
 def Sort(i)
          a1 = 0
@@ -299,6 +301,60 @@ def SortWflag(i, flag)
          end
 end
 
+//==================================================
+// 昇順/降順($reverse = 1)まで計算処理を高速にソート
+// 引数： max 銘柄選択候補数
+// 戻値： sortList max数のソートしたCodeリスト
+//==================================================
+def SelectionSort(max)
+      if ! ($buyCnt)
+            return
+      end
+      buylist  = [$code_num]
+      codelist = [$maxCode]
+      if (max > $buyCnt)
+            max = $buyCnt
+      end
+      // 購入銘柄Codeのリストを作成
+      i = 0
+      m = 0
+      while (i < $code_num)
+            if ($buyflag[i][0]) // 購入の場合は0以外
+                   buylist[m] = i // 購入順序
+                   m = m + 1
+            end
+            i = i + 1
+      end
+      i = 0
+      while (i < $maxCode)
+            if ($order[i])
+                   codelist[$order[i]] = i
+            end
+            i = i + 1
+      end
+      // 選択ソート
+      sortList = [max]
+      i = 0
+      while (i < max)
+            m = i
+            j = i + 1
+            while (j < $buyCnt)
+                    if (! $reverse && $buyflag[buylist[j]][1] < $buyflag[buylist[m]][1])
+                           m = j
+                    elsif ($reverse && $buyflag[buylist[j]][1] > $buyflag[buylist[m]][1])
+                           m = j
+                    end
+                    j = j + 1
+            end
+            min = buylist[m]
+            buylist[m] = buylist[i]
+            buylist[i] = min
+            sortList[i] = (string)codelist[buylist[i]]
+            i = i + 1
+      end
+      return sortList
+end
+
 //====================
 // 優先ストラテジーに応じた買い処理
 //  flag: 処理する購入フラグ = $buyflag[i][0]
@@ -335,6 +391,7 @@ end
 // 株数
 //==================================================
 def Num(buyUnit,price)
+         // 単元株数
          unit = Unit2(price)
          return (buyUnit / (unit * price)) * unit
 end
@@ -351,19 +408,40 @@ def PricedataExistCheck(data)
 end
 
 //==================================================
-// 購入可能かチェック
+// 購入可能かチェック（寄付きと場中）
 //==================================================
 def CheckHighLow(t)
+         t = Yobine(t, 0)
          if ! ({1}High > t && t > {1}Low)
                   return 0
          end
          if ($shortSelling)
-                  // [売り] 翌日始値が指値以上なら約定
+                  // [売り] 翌日始値より指値が大きいなら約定
+                  if ({1}Open < t)
+                           return {1}Open
+                  end
+         else
+                  // [買い] 翌日始値より指値が小さいなら約定
+                  if (t < {1}Open)
+                           return {1}Open
+                  end
+         end
+         return t
+end
+
+//==================================================
+// 購入可能かチェック（寄付き指値）
+// 寄り付きで約定しなければ失効
+//==================================================
+def CheckHighLowSashi(t)
+         t = Yobine(t, 0)
+         if ($shortSelling)
+                  // [売り] 翌日始値より指値が大きいなら約定
                   if ! ({1}Open >= t)
                            return 0
                   end
          else
-                  // [買い] 翌日始値が指値以下なら約定
+                  // [買い] 翌日始値より指値が小さいなら約定
                   if ! (t >= {1}Open)
                            return 0
                   end
@@ -422,7 +500,7 @@ def StopOrderOpenTick()
 end
 
 //==================================================
-// 買い（共通条件）
+// 翌日の始値で買い（共通条件）
 //==================================================
 def Buying(i)
          if (HasPricedata({1}Open))
@@ -445,7 +523,7 @@ def Buying(i)
 end
 
 //==================================================
-// 売り（共通条件）
+// 翌日の始値で売り（共通条件）
 //==================================================
 def Selling(i)
          if (HasPricedata({1}Open))
