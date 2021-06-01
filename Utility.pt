@@ -10,6 +10,11 @@ def Init()
 // ソート処理 ------------------------------------
         $maxCode    = 9999
         $order      = [$maxCode]
+        i = 0
+        while (i < $maxCode)
+                $order[i] = -1
+                i = i + 1
+        end
         $buyflag    = [$code_num * 3]
         $sellflag   = [$code_num]
         $buyCnt     = 0
@@ -29,7 +34,7 @@ def Init()
 // 過去X日平均サイン -----------------------------
         $signal     = [999]       // 過去X日平均サイン(MAX=99)
         $sflag      = 0           // 平均サインのフラグ
-//      　$totalfee   = 0         // 手数料合計
+//      　$totalfee   = 0         // 手数料合計（削除予定）
 end
 
 //====================
@@ -277,7 +282,7 @@ def Sort(i)
 end
 
 //==================================================
-// Flagが一致したものだけソート
+// Flagが一致したものだけソート（削除予定）
 //==================================================
 def SortWflag(i, flag)
          a1 = 0
@@ -302,11 +307,12 @@ def SortWflag(i, flag)
 end
 
 //==================================================
-// 昇順/降順($reverse = 1)まで計算処理を高速にソート
+// 昇順/降順($reverse = 1)で選択候補数だけ選択ソート
 // 引数： max 銘柄選択候補数
+// 引数： selectFlag 複数ストラテジーの優先度（0 = 利用しない）
 // 戻値： sortList max数のソートしたCodeリスト
 //==================================================
-def SelectionSort(max)
+def SelectionSort(max, selectFlag)
       if ! ($buyCnt)
             return
       end
@@ -319,7 +325,9 @@ def SelectionSort(max)
       i = 0
       m = 0
       while (i < $code_num)
-            if ($buyflag[i][0]) // 購入の場合は0以外
+            // 購入の場合$buyflag[i][0]は0以外
+            if ((selectFlag && $buyflag[i][0] == selectFlag) _
+                || (! selectFlag && $buyflag[i][0]))
                    buylist[m] = i // 購入順序
                    m = m + 1
             end
@@ -327,7 +335,7 @@ def SelectionSort(max)
       end
       i = 0
       while (i < $maxCode)
-            if ($order[i])
+            if ($order[i] != -1)
                    codelist[$order[i]] = i
             end
             i = i + 1
@@ -356,7 +364,7 @@ def SelectionSort(max)
 end
 
 //====================
-// 優先ストラテジーに応じた買い処理
+// 優先ストラテジーに応じた買い処理（削除予定）
 //  flag: 処理する購入フラグ = $buyflag[i][0]
 //   max: サイン点灯数がmax値超えると購入（通常1を設定）
 // codes: codesを設定
@@ -403,6 +411,7 @@ def HasPricedata(data)
          return (data)       //存在する場合 1を返す
 end
 
+// （削除予定）
 def PricedataExistCheck(data)
          return !data        // 互換性の為に残す
 end
